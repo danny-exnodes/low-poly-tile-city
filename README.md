@@ -48,6 +48,15 @@ flutter build web --release    # production build in build/web
 
 Only the web platform is set up for now.
 
+## Deployment (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` runs `flutter analyze`, `flutter test` and a
+release web build on every push and pull request. On pushes to `main`/`master` (or a
+manual run) it publishes `build/web` to GitHub Pages at
+`https://<owner>.github.io/<repo>/`. The base href is set from the repo name.
+
+One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
 ## How it works
 
 There is no 3D engine dependency. `lib/engine` contains a small software renderer:
