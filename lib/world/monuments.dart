@@ -145,7 +145,7 @@ void _christ(MeshBuilder b) {
     0,
     [0, 1.8, 3.6, 5.0],
     [7.5, 6.2, 3.8, 2.2],
-    9,
+    12,
     rgb8(140),
     capTop: true,
   );
@@ -194,7 +194,7 @@ void _petronas(MeshBuilder b) {
       0,
       ys,
       rs,
-      8,
+      12,
       silver,
       colors: const [silver, band],
       capTop: false,
@@ -271,7 +271,7 @@ void _stBasil(MeshBuilder b) {
       z,
       [3, h, h + 0.4],
       [1.3, 1.3, 1.5],
-      8,
+      10,
       brick,
       colors: const [brick, white],
       capTop: true,
@@ -285,7 +285,7 @@ void _stBasil(MeshBuilder b) {
     (0.0, 5.6),
     (-5.6, 0.0),
   ]) {
-    b.lathe(x, z, [3, 7, 7.3], [1.0, 1.0, 1.15], 8, white, capTop: true);
+    b.lathe(x, z, [3, 7, 7.3], [1.0, 1.0, 1.15], 10, white, capTop: true);
     _onion(b, x, 7.3, z, 1.0, domes[(i + 1) % 4]);
     i++;
   }
@@ -304,7 +304,7 @@ void _onion(
     z,
     [y, y + 0.5 * s, y + 1.2 * s, y + 1.9 * s, y + 2.5 * s, y + 3.2 * s],
     [0.8 * s, 1.15 * s, 1.2 * s, 0.85 * s, 0.35 * s, 0],
-    8,
+    10,
     c[0],
     segColors: c,
     capTop: false,
@@ -348,7 +348,7 @@ void _atomium(MeshBuilder b) {
     b.tube(corners[i], center, 0.42, 6, tube);
   }
   for (final c in [...corners, center]) {
-    b.sphere(c.x, c.y, c.z, 1.9, 8, 5, steel);
+    b.sphere(c.x, c.y, c.z, 1.9, 10, 6, steel);
   }
 }
 

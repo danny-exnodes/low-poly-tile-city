@@ -1132,6 +1132,7 @@ class City {
     final out = _ShadowOut();
     for (final o in scene.objects) {
       if (!o.castShadow || !o.visible || o.mesh.maxY < 0.4) continue;
+      if (o.build < 0.999) continue; // still under construction (#6)
       final cache = _shadowPts[o.mesh] ??= _ShadowPts(o.mesh);
       final cr = math.cos(o.rot), sr = math.sin(o.rot);
       final gy = o.y + 0.02;

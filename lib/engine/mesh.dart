@@ -80,6 +80,65 @@ class Mesh {
   set lod(Mesh? m) => _lod = m;
   bool get hasLod => _lod != null || _makeLod != null;
 
+  Uint8List? _ao;
+  Int32List? _partRank;
+
+  /// Construction order of each part (#6): bottom to top by the part's
+  /// lowest point, ties kept in build order (decals stay with their wall).
+  Int32List get partRank {
+    final cached = _partRank;
+    if (cached != null) return cached;
+    final n = partCount;
+    final order = List<int>.generate(n, (i) => i)
+      ..sort((a, b) {
+        final ya = (partBox[a * 6 + 1] * 20).round();
+        final yb = (partBox[b * 6 + 1] * 20).round();
+        return ya != yb ? ya.compareTo(yb) : a.compareTo(b);
+      });
+    final rank = Int32List(n);
+    for (var k = 0; k < n; k++) {
+      rank[order[k]] = k;
+    }
+    return _partRank = rank;
+  }
+
+  /// Per-vertex ambient occlusion (3 per triangle, 255 = unoccluded),
+  /// derived from the geometry once (#5): walls darken towards the ground
+  /// and crowns darken underneath, which reads as soft, rounded volumes.
+  Uint8List get ao => _ao ??= _computeAo();
+
+  Uint8List _computeAo() {
+    final n = triCount;
+    final out = Uint8List(n * 3);
+    var part = 0;
+    for (var t = 0; t < n; t++) {
+      while (part + 1 < partStart.length - 1 && partStart[part + 1] <= t) {
+        part++;
+      }
+      final m = mat[t];
+      final ny = nrm[t * 3 + 1];
+      final foliage = m == Mat.foliage || m == Mat.conifer;
+      final py0 = partBox.isEmpty ? minY : partBox[part * 6 + 1];
+      final py1 = partBox.isEmpty ? maxY : partBox[part * 6 + 4];
+      for (var v = 0; v < 3; v++) {
+        final y = pos[t * 9 + v * 3 + 1];
+        double a;
+        if (foliage) {
+          final h = py1 - py0;
+          final k = h > 1e-3 ? ((y - py0) / h).clamp(0.0, 1.0) : 1.0;
+          a = 0.6 + 0.4 * math.sqrt(k);
+        } else if (ny.abs() < 0.7) {
+          final k = ((y - minY) / 2.6).clamp(0.0, 1.0);
+          a = 0.72 + 0.28 * k * k * (3 - 2 * k);
+        } else {
+          a = ny < 0 ? 0.75 : 1.0;
+        }
+        out[t * 3 + v] = (a * 255).round();
+      }
+    }
+    return out;
+  }
+
   /// Copy of this mesh without the triangles flagged in [skip].
   Mesh _without(Uint8List skip) {
     var keep = 0;
@@ -260,7 +319,26 @@ class MeshBuilder {
     int? side,
     bool bottom = false,
     bool cap = true,
+    double bevel = 0,
   }) {
+    final r = math.min(bevel, math.min((x1 - x0), (z1 - z0)) * 0.3);
+    if (r > 0.005 && !bottom) {
+      _bevelBox(
+        x0,
+        y0,
+        z0,
+        x1,
+        y1,
+        z1,
+        color,
+        r,
+        top: top,
+        front: front,
+        side: side,
+        cap: cap,
+      );
+      return;
+    }
     _autoPart();
     final c = V3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
     final s = side ?? color;
@@ -316,6 +394,132 @@ class MeshBuilder {
       s,
       center: c,
     );
+  }
+
+  static int _darker(int c) =>
+      0xFF000000 |
+      ((((c >> 16) & 255) * 7 ~/ 10) << 16) |
+      ((((c >> 8) & 255) * 7 ~/ 10) << 8) |
+      ((c & 255) * 7 ~/ 10);
+
+  /// Box with chamfered vertical edges (and top edges when capped): the
+  /// thin bevels catch light and soften the silhouette (#5).
+  void _bevelBox(
+    double x0,
+    double y0,
+    double z0,
+    double x1,
+    double y1,
+    double z1,
+    int color,
+    double r, {
+    int? top,
+    int? front,
+    int? side,
+    bool cap = true,
+  }) {
+    _autoPart();
+    final s = side ?? color, f = front ?? color, t = top ?? color;
+    final yt = cap ? y1 - r : y1;
+    // Faces: front (+z), back (-z), right (+x), left (-x).
+    quad(
+      V3(x0 + r, y0, z1),
+      V3(x1 - r, y0, z1),
+      V3(x1 - r, yt, z1),
+      V3(x0 + r, yt, z1),
+      f,
+      out: const V3(0, 0, 1),
+    );
+    quad(
+      V3(x0 + r, y0, z0),
+      V3(x1 - r, y0, z0),
+      V3(x1 - r, yt, z0),
+      V3(x0 + r, yt, z0),
+      color,
+      out: const V3(0, 0, -1),
+    );
+    quad(
+      V3(x1, y0, z0 + r),
+      V3(x1, y0, z1 - r),
+      V3(x1, yt, z1 - r),
+      V3(x1, yt, z0 + r),
+      s,
+      out: const V3(1, 0, 0),
+    );
+    quad(
+      V3(x0, y0, z0 + r),
+      V3(x0, y0, z1 - r),
+      V3(x0, yt, z1 - r),
+      V3(x0, yt, z0 + r),
+      s,
+      out: const V3(-1, 0, 0),
+    );
+    // Vertical chamfers.
+    for (final (sx, sz) in const [(1, 1), (-1, 1), (1, -1), (-1, -1)]) {
+      final cx = sx > 0 ? x1 : x0, cz = sz > 0 ? z1 : z0;
+      final a = V3(cx - sx * r, y0, cz), b = V3(cx, y0, cz - sz * r);
+      quad(
+        a,
+        b,
+        V3(b.x, yt, b.z),
+        V3(a.x, yt, a.z),
+        sz > 0 ? f : s,
+        out: V3(sx.toDouble(), 0, sz.toDouble()),
+      );
+    }
+    if (!cap) return;
+    quad(
+      V3(x0 + r, y1, z0 + r),
+      V3(x1 - r, y1, z0 + r),
+      V3(x1 - r, y1, z1 - r),
+      V3(x0 + r, y1, z1 - r),
+      t,
+      out: V3.up,
+    );
+    // Top edge chamfers.
+    quad(
+      V3(x0 + r, yt, z1),
+      V3(x1 - r, yt, z1),
+      V3(x1 - r, y1, z1 - r),
+      V3(x0 + r, y1, z1 - r),
+      f,
+      out: const V3(0, 1, 1),
+    );
+    quad(
+      V3(x0 + r, yt, z0),
+      V3(x1 - r, yt, z0),
+      V3(x1 - r, y1, z0 + r),
+      V3(x0 + r, y1, z0 + r),
+      color,
+      out: const V3(0, 1, -1),
+    );
+    quad(
+      V3(x1, yt, z0 + r),
+      V3(x1, yt, z1 - r),
+      V3(x1 - r, y1, z1 - r),
+      V3(x1 - r, y1, z0 + r),
+      s,
+      out: const V3(1, 1, 0),
+    );
+    quad(
+      V3(x0, yt, z0 + r),
+      V3(x0, yt, z1 - r),
+      V3(x0 + r, y1, z1 - r),
+      V3(x0 + r, y1, z0 + r),
+      s,
+      out: const V3(-1, 1, 0),
+    );
+    // Corner triangles.
+    for (final (sx, sz) in const [(1, 1), (-1, 1), (1, -1), (-1, -1)]) {
+      final cx = sx > 0 ? x1 : x0, cz = sz > 0 ? z1 : z0;
+      tri(
+        V3(cx - sx * r, yt, cz),
+        V3(cx, yt, cz - sz * r),
+        V3(cx - sx * r, y1, cz - sz * r),
+        s,
+        out: V3(sx.toDouble(), 1, sz.toDouble()),
+      );
+    }
   }
 
   /// Box centred at [c] with half-extent axes (any orientation).
@@ -493,6 +697,86 @@ class MeshBuilder {
     lathe(cx, cz, ys, rs, segs, color, capTop: false);
   }
 
+  /// Geodesic sphere (icosahedron subdivided [subdiv] times). [wobble]
+  /// nudges each shared vertex outward/inward for an organic, still
+  /// watertight silhouette; [color] is asked once per triangle.
+  void icosphere(
+    V3 c,
+    double r,
+    int Function() color, {
+    int subdiv = 1,
+    double squash = 1,
+    double Function()? wobble,
+  }) {
+    _autoPart();
+    const t = 1.618033988749895;
+    var verts = <V3>[
+      const V3(-1, t, 0),
+      const V3(1, t, 0),
+      const V3(-1, -t, 0),
+      const V3(1, -t, 0),
+      const V3(0, -1, t),
+      const V3(0, 1, t),
+      const V3(0, -1, -t),
+      const V3(0, 1, -t),
+      const V3(t, 0, -1),
+      const V3(t, 0, 1),
+      const V3(-t, 0, -1),
+      const V3(-t, 0, 1),
+    ].map((v) => v.normalized).toList();
+    var faces = <List<int>>[
+      [0, 11, 5],
+      [0, 5, 1],
+      [0, 1, 7],
+      [0, 7, 10],
+      [0, 10, 11],
+      [1, 5, 9],
+      [5, 11, 4],
+      [11, 10, 2],
+      [10, 7, 6],
+      [7, 1, 8],
+      [3, 9, 4],
+      [3, 4, 2],
+      [3, 2, 6],
+      [3, 6, 8],
+      [3, 8, 9],
+      [4, 9, 5],
+      [2, 4, 11],
+      [6, 2, 10],
+      [8, 6, 7],
+      [9, 8, 1],
+    ];
+    for (var s = 0; s < subdiv; s++) {
+      final mid = <int, int>{};
+      int m(int a, int b) {
+        final k = a < b ? a * 65536 + b : b * 65536 + a;
+        return mid.putIfAbsent(k, () {
+          verts.add(((verts[a] + verts[b]) * 0.5).normalized);
+          return verts.length - 1;
+        });
+      }
+
+      faces = [
+        for (final f in faces) ...[
+          [f[0], m(f[0], f[1]), m(f[2], f[0])],
+          [f[1], m(f[1], f[2]), m(f[0], f[1])],
+          [f[2], m(f[2], f[0]), m(f[1], f[2])],
+          [m(f[0], f[1]), m(f[1], f[2]), m(f[2], f[0])],
+        ],
+      ];
+    }
+    verts = [
+      for (final v in verts)
+        () {
+          final k = r * (1 + (wobble?.call() ?? 0));
+          return V3(c.x + v.x * k, c.y + v.y * k * squash, c.z + v.z * k);
+        }(),
+    ];
+    for (final f in faces) {
+      tri(verts[f[0]], verts[f[1]], verts[f[2]], color(), center: c);
+    }
+  }
+
   /// Arbitrary-axis cylinder between [a] and [b].
   void tube(V3 a, V3 b, double r, int segs, int color) {
     _autoPart();
@@ -579,6 +863,24 @@ class MeshBuilder {
         color,
         center: c,
       );
+      // Fascia boards under the eaves give the roof some thickness (#5).
+      final fc = _darker(color);
+      quad(
+        V3(ox0, hy - 0.16, oz0),
+        V3(ox1, hy - 0.16, oz0),
+        V3(ox1, hy, oz0),
+        V3(ox0, hy, oz0),
+        fc,
+        out: const V3(0, 0, -1),
+      );
+      quad(
+        V3(ox0, hy - 0.16, oz1),
+        V3(ox1, hy - 0.16, oz1),
+        V3(ox1, hy, oz1),
+        V3(ox0, hy, oz1),
+        fc,
+        out: const V3(0, 0, 1),
+      );
       tri(
         V3(x0, y0, z0),
         V3(x0, y0, z1),
@@ -613,6 +915,23 @@ class MeshBuilder {
         V3(xm, y0 + h, oz0),
         color,
         center: c,
+      );
+      final fc = _darker(color);
+      quad(
+        V3(ox0, hy - 0.16, oz0),
+        V3(ox0, hy - 0.16, oz1),
+        V3(ox0, hy, oz1),
+        V3(ox0, hy, oz0),
+        fc,
+        out: const V3(-1, 0, 0),
+      );
+      quad(
+        V3(ox1, hy - 0.16, oz0),
+        V3(ox1, hy - 0.16, oz1),
+        V3(ox1, hy, oz1),
+        V3(ox1, hy, oz0),
+        fc,
+        out: const V3(1, 0, 0),
       );
       tri(
         V3(x0, y0, z0),

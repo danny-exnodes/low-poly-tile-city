@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'mesh.dart';
 
@@ -120,6 +121,27 @@ class Light {
 
   static const _snow = 0xFFF4F6FA;
 
+  // Season colours depend only on the object's tint, but shade() runs per
+  // triangle; remember the last result per kind (#5, light-change budget).
+  final _memoTint = Float64List.fromList([-1, -1, -1]);
+  final _memoColor = Int32List(3);
+
+  int _tinted(int kind, double tint) {
+    if (_memoTint[kind] == tint) return _memoColor[kind];
+    final c = switch (kind) {
+      0 => foliage(tint),
+      1 => mixColor(0xFF2F6B45, 0xFF3E7E4A, tint),
+      _ => grass(tint),
+    };
+    _memoTint[kind] = tint;
+    _memoColor[kind] = c;
+    return c;
+  }
+
+  static const _wrap = 0.35;
+
+  static double _knee(double x) => x < 0.85 ? x : 0.85 + (x - 0.85) * 0.38;
+
   /// Foliage colour for a deciduous tree. [tint] (0..1) varies per tree.
   int foliage(double tint) {
     switch (season) {
@@ -185,17 +207,18 @@ class Light {
         if (season != Season.winter) return 0;
       case Mat.foliage:
         if (season == Season.winter) return 0;
-        final j = 0.82 + ((base >> 16) & 255) / 255 * 0.36;
-        base = scaleColor(foliage(tint), j);
+        // Gentle per-facet variation; AO does the rounding (#5).
+        final j = 0.9 + ((base >> 16) & 255) / 255 * 0.18;
+        base = scaleColor(_tinted(0, tint), j);
       case Mat.conifer:
         final j = 0.85 + ((base >> 16) & 255) / 255 * 0.3;
-        base = scaleColor(mixColor(0xFF2F6B45, 0xFF3E7E4A, tint), j);
+        base = scaleColor(_tinted(1, tint), j);
         if (season == Season.winter && ny > 0.25) {
           base = mixColor(base, _snow, 0.75);
         }
       case Mat.grass:
         final j = 0.94 + ((base >> 16) & 255) / 255 * 0.12;
-        base = scaleColor(grass(tint), j);
+        base = scaleColor(_tinted(2, tint), j);
       case Mat.crop:
         base = crop(base, tint);
       case Mat.roof:
@@ -212,12 +235,15 @@ class Light {
         break;
     }
 
+    // Wrapped diffuse keeps faces turned away from the sun from going flat,
+    // and the soft knee stops sunlit tops blowing out at noon (#5).
     final dot = nx * sx + ny * sy + nz * sz;
-    final d = dot > 0 ? dot : 0.0;
+    final wd = (dot + _wrap) / (1 + _wrap);
+    final d = (wd > 0 ? wd : 0.0) * 0.82;
     final h = ny * 0.5 + 0.5;
-    final lr = gndR + (skyR - gndR) * h + sunR * d;
-    final lg = gndG + (skyG - gndG) * h + sunG * d;
-    final lb = gndB + (skyB - gndB) * h + sunB * d;
+    final lr = _knee(gndR + (skyR - gndR) * h + sunR * d);
+    final lg = _knee(gndG + (skyG - gndG) * h + sunG * d);
+    final lb = _knee(gndB + (skyB - gndB) * h + sunB * d);
     var r = ((base >> 16) & 255) * lr;
     var g = ((base >> 8) & 255) * lg;
     var b = (base & 255) * lb;

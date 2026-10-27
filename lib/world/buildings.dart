@@ -93,6 +93,68 @@ void windows(
   side(-1, 0, x0, z0, z1);
 }
 
+/// Walls of a building as one part per floor (bevelled band + that floor's
+/// windows + [extras]), so construction can rise floor by floor (#6) and
+/// the softened edges read as low-poly rather than cut paper (#5).
+void _body(
+  MeshBuilder b,
+  double x0,
+  double z0,
+  double x1,
+  double z1,
+  int floors,
+  double fh,
+  int color, {
+  double y0 = 0,
+  double bevel = 0.2,
+  int? top,
+  int? frame,
+  bool skipGroundFront = false,
+  double spacing = 2.5,
+  double ww = 1.0,
+  double wh = 1.45,
+  bool band = false,
+  bool noWindows = false,
+  void Function(int floor)? extras,
+}) {
+  for (var f = 0; f < floors; f++) {
+    final fy = y0 + f * fh;
+    b.part();
+    b.box(
+      x0,
+      fy,
+      z0,
+      x1,
+      fy + fh,
+      z1,
+      color,
+      top: top,
+      cap: f == floors - 1,
+      bevel: bevel,
+    );
+    if (!noWindows) {
+      windows(
+        b,
+        x0,
+        z0,
+        x1,
+        z1,
+        fy,
+        1,
+        fh,
+        ww: ww,
+        wh: wh,
+        spacing: spacing,
+        frame: frame,
+        skipGroundFront: skipGroundFront && f == 0,
+        band: band,
+      );
+    }
+    extras?.call(f);
+    b.endPart();
+  }
+}
+
 void _door(
   MeshBuilder b,
   double x,
@@ -159,23 +221,27 @@ void _cottage(MeshBuilder b, double w, double d, math.Random r) {
   final facade = _pick(r, Pal.facades);
   final roof = _pick(r, Pal.roofs);
   final z0 = -hd + 0.6, z1 = hd + 0.2;
-  b.box(-hw, 0, z0, hw, h, z1, facade);
-  windows(
+  _body(
     b,
     -hw,
     z0,
     hw,
     z1,
-    0,
     floors,
     2.9,
+    facade,
+    bevel: 0.2,
     frame: Pal.frame,
     skipGroundFront: true,
     spacing: 2.3,
+    extras: (f) {
+      if (f != 0) return;
+      _door(b, -hw + 1.5, z1, 0);
+      b.mat = Mat.window;
+      b.wallRect(0, 1, z1, 0.2, hw - 0.6, 0.9, 2.2, Pal.glass, off: 0.06);
+      b.mat = Mat.plain;
+    },
   );
-  _door(b, -hw + 1.5, z1, 0);
-  b.mat = Mat.window;
-  b.wallRect(0, 1, z1, 0.2, hw - 0.6, 0.9, 2.2, Pal.glass, off: 0.06);
   b.mat = Mat.roof;
   if (r.nextBool()) {
     b.gable(
@@ -214,73 +280,76 @@ void _townhouse(
   final h = floors * fh;
   final facade = _pick(r, Pal.facades);
   final roof = _pick(r, Pal.roofs);
-  b.box(-hw, 0, -hd, hw, h, hd, facade);
-  // Ground floor plinth band.
-  b.box(
-    -hw - 0.05,
-    0,
-    -hd - 0.05,
-    hw + 0.05,
-    0.6,
-    hd + 0.05,
-    0xFFBDB3A3,
-    cap: false,
-  );
-  windows(
+  final frame = r.nextInt(3) == 0 ? null : Pal.frame;
+  final spacing = 2.2 + r.nextDouble() * 0.5;
+  final shopFront = shop || r.nextInt(3) == 0;
+  final aw = _pick(r, Pal.awnings);
+  _body(
     b,
     -hw,
     -hd,
     hw,
     hd,
-    0,
     floors,
     fh,
-    frame: r.nextInt(3) == 0 ? null : Pal.frame,
+    facade,
+    bevel: 0, // attached rows: side bevels would not show
+    frame: frame,
     skipGroundFront: true,
-    spacing: 2.2 + r.nextDouble() * 0.5,
+    spacing: spacing,
+    extras: (f) {
+      if (f != 0) return;
+      // Ground floor plinth band.
+      b.box(
+        -hw - 0.05,
+        0,
+        -hd - 0.05,
+        hw + 0.05,
+        0.6,
+        hd + 0.05,
+        0xFFBDB3A3,
+        cap: false,
+      );
+      if (shopFront) {
+        b.mat = Mat.window;
+        b.wallRect(
+          0,
+          1,
+          hd,
+          -hw + 0.5,
+          hw - 1.8,
+          0.4,
+          2.5,
+          Pal.glassLight,
+          off: 0.06,
+        );
+        b.mat = Mat.plain;
+        _door(b, hw - 1.1, hd, 0, color: 0xFF3A3F47);
+        b.quad(
+          V3(-hw + 0.3, 2.9, hd),
+          V3(hw - 0.3, 2.9, hd),
+          V3(hw - 0.3, 2.5, hd + 1.3),
+          V3(-hw + 0.3, 2.5, hd + 1.3),
+          aw,
+          out: const V3(0, 1, 0.3),
+        );
+        b.quad(
+          V3(-hw + 0.3, 2.5, hd + 1.3),
+          V3(hw - 0.3, 2.5, hd + 1.3),
+          V3(hw - 0.3, 2.2, hd + 1.3),
+          V3(-hw + 0.3, 2.2, hd + 1.3),
+          aw,
+          out: const V3(0, 0, 1),
+        );
+      } else {
+        _door(b, 0, hd, 0);
+        b.mat = Mat.window;
+        b.wallRect(0, 1, hd, -hw + 0.6, -1.0, 0.9, 2.4, Pal.glass, off: 0.06);
+        b.wallRect(0, 1, hd, 1.0, hw - 0.6, 0.9, 2.4, Pal.glass, off: 0.06);
+        b.mat = Mat.plain;
+      }
+    },
   );
-  // Ground floor: shop front or door.
-  if (shop || r.nextInt(3) == 0) {
-    b.mat = Mat.window;
-    b.wallRect(
-      0,
-      1,
-      hd,
-      -hw + 0.5,
-      hw - 1.8,
-      0.4,
-      2.5,
-      Pal.glassLight,
-      off: 0.06,
-    );
-    b.mat = Mat.plain;
-    _door(b, hw - 1.1, hd, 0, color: 0xFF3A3F47);
-    final aw = _pick(r, Pal.awnings);
-    b.part();
-    b.quad(
-      V3(-hw + 0.3, 2.9, hd),
-      V3(hw - 0.3, 2.9, hd),
-      V3(hw - 0.3, 2.5, hd + 1.3),
-      V3(-hw + 0.3, 2.5, hd + 1.3),
-      aw,
-      out: const V3(0, 1, 0.3),
-    );
-    b.quad(
-      V3(-hw + 0.3, 2.5, hd + 1.3),
-      V3(hw - 0.3, 2.5, hd + 1.3),
-      V3(hw - 0.3, 2.2, hd + 1.3),
-      V3(-hw + 0.3, 2.2, hd + 1.3),
-      aw,
-      out: const V3(0, 0, 1),
-    );
-    b.endPart();
-  } else {
-    _door(b, 0, hd, 0);
-    b.mat = Mat.window;
-    b.wallRect(0, 1, hd, -hw + 0.6, -1.0, 0.9, 2.4, Pal.glass, off: 0.06);
-    b.wallRect(0, 1, hd, 1.0, hw - 0.6, 0.9, 2.4, Pal.glass, off: 0.06);
-    b.mat = Mat.plain;
-  }
   // Cornice.
   b.box(-hw - 0.2, h - 0.3, -hd - 0.2, hw + 0.2, h, hd + 0.2, 0xFFE9E3D6);
   b.mat = Mat.roof;
@@ -359,38 +428,41 @@ void _apartment(MeshBuilder b, double w, double d, math.Random r) {
     0xFFC9BBAA,
     0xFFE6C7A6,
   ]);
-  b.box(-hw, 0, -hd, hw, h, hd, facade);
-  windows(
+  final cols = math.max(1, ((2 * hw - 0.6) / 5.2).floor());
+  _body(
     b,
     -hw,
     -hd,
     hw,
     hd,
-    0,
     floors,
     fh,
+    facade,
+    bevel: 0.25,
     spacing: 2.6,
     frame: 0xFFF5F2EA,
     skipGroundFront: true,
+    extras: (f) {
+      if (f == 0) {
+        _door(b, 0, hd, 0, w: 1.8, color: 0xFF3A3F47);
+        return;
+      }
+      // Balconies on front.
+      for (var c = 0; c < cols; c++) {
+        final x = -hw + (c + 0.5) * (2 * hw / cols);
+        b.box(
+          x - 1.2,
+          f * fh,
+          hd,
+          x + 1.2,
+          f * fh + 1.0,
+          hd + 0.9,
+          0xFFF4F1EA,
+          bottom: true,
+        );
+      }
+    },
   );
-  _door(b, 0, hd, 0, w: 1.8, color: 0xFF3A3F47);
-  // Balconies on front.
-  final cols = math.max(1, ((2 * hw - 0.6) / 5.2).floor());
-  for (var f = 1; f < floors; f++) {
-    for (var c = 0; c < cols; c++) {
-      final x = -hw + (c + 0.5) * (2 * hw / cols);
-      b.box(
-        x - 1.2,
-        f * fh,
-        hd,
-        x + 1.2,
-        f * fh + 1.0,
-        hd + 0.9,
-        0xFFF4F1EA,
-        bottom: true,
-      );
-    }
-  }
   // Parapet and roof plant.
   b.mat = Mat.roof;
   b.box(-hw, h, -hd, hw, h + 0.15, hd, 0xFF8E8A85);
@@ -418,60 +490,40 @@ void _office(MeshBuilder b, double w, double d, math.Random r) {
     final floors = (t == 0 ? 5 : 2) + r.nextInt(t == 0 ? 6 : 3);
     const fh = 3.2;
     final h = floors * fh;
-    b.box(
+    final thw = hw, thd = hd, ty = y;
+    _body(
+      b,
       -hw,
-      y,
       -hd,
       hw,
-      y + h,
       hd,
+      floors,
+      fh,
       glassy ? 0xFF6E879E : body,
+      y0: y,
+      bevel: 0.3,
       top: 0xFF8E8A85,
-    );
-    if (glassy) {
-      // Horizontal spandrel bands.
-      for (var f = 0; f < floors; f++) {
-        final fy = y + f * fh;
+      band: !glassy,
+      wh: glassy ? 2.2 : 1.6,
+      ww: glassy ? 2.2 : 1.0,
+      spacing: glassy ? 3.0 : 2.5,
+      skipGroundFront: !glassy && t == 0,
+      extras: (f) {
+        if (!glassy) return;
+        // Horizontal spandrel band.
+        final fy = ty + f * fh;
         b.box(
-          -hw - 0.05,
+          -thw - 0.05,
           fy,
-          -hd - 0.05,
-          hw + 0.05,
+          -thd - 0.05,
+          thw + 0.05,
           fy + 0.7,
-          hd + 0.05,
+          thd + 0.05,
           0xFFDCE1E6,
           cap: false,
         );
-      }
-      b.mat = Mat.window;
-      windows(
-        b,
-        -hw,
-        -hd,
-        hw,
-        hd,
-        y,
-        floors,
-        fh,
-        wh: 2.2,
-        spacing: 3.0,
-        ww: 2.2,
-      );
-    } else {
-      windows(
-        b,
-        -hw,
-        -hd,
-        hw,
-        hd,
-        y,
-        floors,
-        fh,
-        band: true,
-        wh: 1.6,
-        skipGroundFront: t == 0,
-      );
-    }
+      },
+    );
     y += h;
     if (t < tiers - 1) {
       hw *= 0.78;
@@ -510,7 +562,7 @@ void _office(MeshBuilder b, double w, double d, math.Random r) {
 void _supermarket(MeshBuilder b, double w, double d, math.Random r) {
   final hw = w / 2 - 0.5, hd = d / 2 - 0.5;
   const h = 6.0;
-  b.box(-hw, 0, -hd, hw, h, hd, 0xFFEDEAE3, top: 0xFFB9B4AD);
+  b.box(-hw, 0, -hd, hw, h, hd, 0xFFEDEAE3, top: 0xFFB9B4AD, bevel: 0.3);
   b.box(
     -hw - 0.1,
     h - 1.6,
@@ -556,29 +608,35 @@ void _supermarket(MeshBuilder b, double w, double d, math.Random r) {
 void _hospital(MeshBuilder b, double w, double d, math.Random r) {
   final hw = w / 2 - 0.5, hd = d / 2 - 0.5;
   const fh = 3.2;
-  b.box(-hw, 0, -hd, hw, 5 * fh, hd, 0xFFF3F1EC, top: 0xFFB9B4AD);
-  windows(
+  _body(
     b,
     -hw,
     -hd,
     hw,
     hd,
-    0,
     5,
     fh,
+    0xFFF3F1EC,
+    top: 0xFFB9B4AD,
+    bevel: 0.3,
     band: true,
     wh: 1.4,
     skipGroundFront: true,
+    extras: (f) {
+      if (f == 0) {
+        b.mat = Mat.window;
+        b.wallRect(0, 1, hd, -3, 3, 0.2, 2.8, Pal.glassLight, off: 0.06);
+        b.mat = Mat.plain;
+        b.box(-4, 3.2, hd, 4, 3.5, hd + 3, 0xFFE9E3D6, bottom: true);
+      } else if (f == 3) {
+        // Red cross sign.
+        b.mat = Mat.neon;
+        b.wallRect(0, 1, hd, -0.3, 0.3, 11.5, 14.5, 0xFFE0453A, off: 0.08);
+        b.wallRect(0, 1, hd, -1.5, 1.5, 12.7, 13.3, 0xFFE0453A, off: 0.09);
+        b.mat = Mat.plain;
+      }
+    },
   );
-  b.mat = Mat.window;
-  b.wallRect(0, 1, hd, -3, 3, 0.2, 2.8, Pal.glassLight, off: 0.06);
-  b.mat = Mat.plain;
-  b.box(-4, 3.2, hd, 4, 3.5, hd + 3, 0xFFE9E3D6, bottom: true);
-  // Red cross sign.
-  b.mat = Mat.neon;
-  b.wallRect(0, 1, hd, -0.3, 0.3, 11.5, 14.5, 0xFFE0453A, off: 0.08);
-  b.wallRect(0, 1, hd, -1.5, 1.5, 12.7, 13.3, 0xFFE0453A, off: 0.09);
-  b.mat = Mat.plain;
 }
 
 void _church(MeshBuilder b, double w, double d, math.Random r) {

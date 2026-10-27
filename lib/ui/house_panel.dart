@@ -76,7 +76,7 @@ class _HousePanelState extends State<HousePanel> {
           ),
           const SizedBox(height: 6),
           Text(
-            w.building
+            w.isBuilding(lot)
                 ? 'building…'
                 : '${lot.style.label} · block ${lot.block.i + 1}-${lot.block.j + 1}',
             style: const TextStyle(

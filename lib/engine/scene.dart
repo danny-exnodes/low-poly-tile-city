@@ -18,6 +18,10 @@ class SceneObject {
   bool dynamicLight = false;
   bool castShadow;
   double highlight = 0;
+
+  /// Construction progress (#6): 1 = complete; below 1 only the first
+  /// parts (in [Mesh.partRank] order) are drawn and the next one drops in.
+  double build = 1;
   Object? owner;
 
   Int32List? lit;
@@ -49,17 +53,31 @@ class SceneObject {
     lodLitVersion = light.version;
   }
 
+  /// Lit colour per vertex (3 per triangle; 0 = triangle hidden).
   Int32List _shade(Mesh m, Int32List? l, Light light) {
     final n = m.triCount;
-    if (l == null || l.length != n) l = Int32List(n);
+    if (l == null || l.length != n * 3) l = Int32List(n * 3);
     final cr = math.cos(rot), sr = math.sin(rot);
     final cs = math.cos(spin), ss = math.sin(spin);
-    final nrm = m.nrm, col = m.col, mat = m.mat;
+    final nrm = m.nrm, col = m.col, mat = m.mat, ao = m.ao;
     for (var i = 0; i < n; i++) {
       final nx = nrm[i * 3], ny = nrm[i * 3 + 1], nz = nrm[i * 3 + 2];
       final x1 = cs * nx - ss * ny, y1 = ss * nx + cs * ny;
       final wx = cr * x1 + sr * nz, wz = -sr * x1 + cr * nz;
-      l[i] = light.shade(col[i], mat[i], wx, y1, wz, tint, key + (i >> 1));
+      final c = light.shade(col[i], mat[i], wx, y1, wz, tint, key + (i >> 1));
+      if (c == 0) {
+        l[i * 3] = l[i * 3 + 1] = l[i * 3 + 2] = 0;
+        continue;
+      }
+      final r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+      for (var v = 0; v < 3; v++) {
+        final a = ao[i * 3 + v];
+        l[i * 3 + v] =
+            0xFF000000 |
+            ((r * a ~/ 255) << 16) |
+            ((g * a ~/ 255) << 8) |
+            (b * a ~/ 255);
+      }
     }
     return l;
   }
