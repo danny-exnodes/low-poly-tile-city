@@ -1,7 +1,7 @@
 name: low_poly_tile_city
 description: "Low-Poly Tile City - a cosy procedural low-poly town for the browser."
 publish_to: 'none'
-version: 0.0.2+2
+version: 0.0.3+3
 
 environment:
   sdk: ^3.13.7
