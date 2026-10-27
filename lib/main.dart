@@ -1,0 +1,217 @@
+import 'dart:js_interop';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:web/web.dart' as web;
+
+import 'audio/audio_engine.dart';
+import 'ui/controls.dart';
+import 'ui/house_panel.dart';
+import 'ui/settings_panel.dart';
+import 'ui/viewport.dart';
+import 'ui/wind_gauge.dart';
+import 'world/world.dart';
+
+void main() {
+  // Suppress the browser context menu so right-drag can pan.
+  web.document.addEventListener(
+    'contextmenu',
+    ((web.Event e) => e.preventDefault()).toJS,
+  );
+  runApp(const TileCityApp());
+}
+
+class TileCityApp extends StatelessWidget {
+  const TileCityApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Low-Poly Tile City',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        fontFamily: 'Inter',
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: UI.accent,
+          brightness: Brightness.dark,
+        ),
+      ),
+      home: const CityScreen(),
+    );
+  }
+}
+
+class CityScreen extends StatefulWidget {
+  const CityScreen({super.key});
+
+  @override
+  State<CityScreen> createState() => _CityScreenState();
+}
+
+class _CityScreenState extends State<CityScreen>
+    with SingleTickerProviderStateMixin {
+  final world = World();
+  final audio = AudioEngine();
+  final frame = ValueNotifier<int>(0);
+  final stats = ValueNotifier<String>('');
+  final gauge = ValueNotifier<int>(0);
+  late final Ticker _ticker;
+  Duration _last = Duration.zero;
+  double _statT = 0;
+  double _simMs = 0;
+  int _frames = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_tick)..start();
+  }
+
+  void _tick(Duration now) {
+    final dt = _last == Duration.zero
+        ? 1 / 60
+        : (now - _last).inMicroseconds / 1e6;
+    _last = now;
+    final sw = Stopwatch()..start();
+    world.update(dt);
+    _simMs = _simMs * 0.9 + sw.elapsedMicroseconds / 1000 * 0.1;
+    audio.tick(world);
+    frame.value++;
+    _frames++;
+    _statT += dt;
+    if (_statT >= 0.5) {
+      world.fps = _frames / _statT;
+      _frames = 0;
+      _statT = 0;
+      final r = world.renderer.stats;
+      final c = world.city;
+      stats.value =
+          '${c.nx * c.nz} blocks · ${c.houseCount} houses · '
+          '${world.fps.round()} fps\n${r.drawCalls} draw calls · '
+          '${_k(r.triangles)} triangles\n'
+          'cpu ${r.cpuMs.toStringAsFixed(1)} ms render · ${_simMs.toStringAsFixed(1)} ms sim';
+    }
+    if (_frames % 6 == 0) gauge.value++;
+  }
+
+  static String _k(int n) =>
+      n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    audio.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.width < 640;
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E1914),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: CityViewport(world: world, frame: frame),
+          ),
+          // House / monument panel.
+          Positioned(
+            left: 16,
+            top: 16,
+            child: AnimatedBuilder(
+              animation: world,
+              builder: (context, _) {
+                final lot = world.selected;
+                return AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (c, a) => FadeTransition(
+                    opacity: a,
+                    child: SlideTransition(
+                      position: Tween(
+                        begin: const Offset(-0.05, 0),
+                        end: Offset.zero,
+                      ).animate(a),
+                      child: c,
+                    ),
+                  ),
+                  child: lot == null
+                      ? (world.moveBlocks
+                            ? const _Hint(
+                                key: ValueKey('move'),
+                                text: 'Move blocks: tap a block, then tap another to swap them.',
+                              )
+                            : const SizedBox.shrink(key: ValueKey('none')))
+                      : HousePanel(key: ValueKey(lot), world: world, lot: lot),
+                );
+              },
+            ),
+          ),
+          // Settings.
+          Positioned(
+            right: 16,
+            top: 16,
+            bottom: compact ? 96 : 16,
+            child: Align(
+              alignment: Alignment.topRight,
+              child: SingleChildScrollView(
+                child: SettingsPanel(world: world, stats: stats),
+              ),
+            ),
+          ),
+          // Wind gauge.
+          Positioned(
+            left: 16,
+            bottom: 16,
+            child: ValueListenableBuilder(
+              valueListenable: gauge,
+              builder: (context, _, _) => WindGauge(wind: world.wind),
+            ),
+          ),
+          if (!compact)
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 22,
+              child: IgnorePointer(
+                child: Center(
+                  child: Text(
+                    'drag to orbit · right-drag or shift-drag to pan · scroll to zoom · click a house',
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 11,
+                      color: Color(0x99FFFFFF),
+                      shadows: [
+                        Shadow(blurRadius: 6, color: Color(0x66000000)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Hint extends StatelessWidget {
+  final String text;
+  const _Hint({super.key, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      width: 232,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          const Icon(Icons.open_with, size: 16, color: UI.accent),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: UI.label)),
+        ],
+      ),
+    );
+  }
+}
