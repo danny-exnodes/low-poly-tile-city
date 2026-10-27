@@ -142,6 +142,16 @@ class _SettingsPanelState extends State<SettingsPanel> {
         },
       ),
       PanelButton(
+        icon: Icons.auto_fix_high,
+        label: 'Smooth edges',
+        active: w.smoothEdges,
+        onTap: () {
+          w.smoothEdges = !w.smoothEdges;
+          w.autoSmooth = false; // the user decided
+          setState(() {});
+        },
+      ),
+      PanelButton(
         icon: Icons.park,
         label: 'Switch trees',
         onTap: w.switchTrees,
@@ -353,7 +363,11 @@ class _SettingsPanelState extends State<SettingsPanel> {
             children: [
               Expanded(child: buttons[i]),
               const SizedBox(width: 6),
-              Expanded(child: buttons[i + 1]),
+              Expanded(
+                child: i + 1 < buttons.length
+                    ? buttons[i + 1]
+                    : const SizedBox.shrink(),
+              ),
             ],
           ),
           const SizedBox(height: 6),

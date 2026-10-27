@@ -10,19 +10,21 @@ import 'monuments.dart';
 import 'props.dart';
 import 'simulation.dart';
 
-class _Build {
-  final Lot lot;
-  final List<SceneObject> objs;
-  final List<double> target;
-  double t = 0;
-  _Build(this.lot, this.objs, this.target);
+/// One object being built, grown in or demolished (#6).
+class _Job {
+  final SceneObject obj;
+  final double start, dur;
+  final _JobKind kind;
+  final double sx, sy, sz;
+  final Block? block;
+  bool started = false;
+  _Job(this.obj, this.start, this.dur, this.kind, this.block)
+    : sx = obj.sx,
+      sy = obj.sy,
+      sz = obj.sz;
 }
 
-class _Drop {
-  final SceneObject obj;
-  final double baseY;
-  _Drop(this.obj, this.baseY);
-}
+enum _JobKind { parts, grow, demolish }
 
 class _CamAnim {
   final double tx0, tz0, d0, p0, y0, tx1, tz1, d1, p1, y1;
@@ -61,15 +63,39 @@ class World extends ChangeNotifier {
   double trafficAmount = 1.75;
   double treeDensity = 1;
   bool tiltShift = true;
+
+  /// Supersampled anti-aliasing; on by default only where pixels are big
+  /// enough for jaggies to show (#5).
+  bool smoothEdges = true;
+  double supersampleFactor = 1.5;
+
+  /// While true, [reportFps] may switch [smoothEdges] off on slow machines.
+  bool autoSmooth = true;
+  int _slowSamples = 0;
+
+  /// Called twice a second with the measured frame rate. Supersampling is
+  /// dropped after 2 s below 45 fps (outside construction), so slow
+  /// machines keep their frame rate; the button turns it back on (#5).
+  void reportFps(double v) {
+    fps = v;
+    if (!smoothEdges || !autoSmooth || time < 3) return;
+    _slowSamples = v < 45 ? _slowSamples + 1 : 0;
+    if (_slowSamples >= 4) {
+      smoothEdges = false;
+      autoSmooth = false;
+      notifyListeners();
+    }
+  }
+
   bool moveBlocks = false;
   bool sound = false;
   bool music = false;
 
   Lot? selected;
   Block? moveFrom;
-  final _builds = <_Build>[];
-  final _drops = <_Drop>[];
-  double _dropT = 1;
+  final _jobs = <_Job>[];
+  double _shadowsAt = 0;
+  bool _intro = false;
   _CamAnim? _camAnim;
 
   /// Incremented whenever something worth a sound effect happens.
@@ -84,13 +110,24 @@ class World extends ChangeNotifier {
   World() {
     city = City(5, 5, 1234);
     _rebuild();
+    _queueAll(intro: true);
     final cam = renderer.cam;
     cam.dist = 330;
     cam.yaw = -0.22;
     cam.pitch = 0.83;
   }
 
-  bool get building => _builds.isNotEmpty;
+  bool get building => _jobs.isNotEmpty;
+
+  /// Blocks still under construction (footer "building N blocks…").
+  int get buildingBlocks => {
+    for (final j in _jobs)
+      if (j.kind != _JobKind.demolish && j.block != null) j.block,
+  }.length;
+
+  bool isBuilding(Lot l) => _jobs.any(
+    (j) => j.kind != _JobKind.demolish && l.objects.contains(j.obj),
+  );
 
   double get hour => _hour;
   set hour(double v) {
@@ -114,7 +151,7 @@ class World extends ChangeNotifier {
     city.treeDensity = treeDensity;
     selected = null;
     moveFrom = null;
-    _builds.clear();
+    _finishJobs();
     city.build(scene);
     traffic.amount = trafficAmount;
     traffic.rehome(scene, city);
@@ -131,14 +168,23 @@ class World extends ChangeNotifier {
   void setTreeDensity(double v) {
     treeDensity = v;
     _rebuild();
+    _queueTrees();
     notifyListeners();
   }
 
   void resize(int nx, int nz) {
     if (nx == city.nx && nz == city.nz) return;
+    final ox = city.nx, oz = city.nz;
     city.resize(nx, nz);
     scene.particles.clear();
     _rebuild();
+    // Blocks coming back from a shrink are built up again (#6).
+    var k = 0;
+    for (final b in city.blocks) {
+      if ((b.i >= ox || b.j >= oz) && b.objects.isNotEmpty) {
+        _queueBlock(b, 0.15 * k++);
+      }
+    }
     notifyListeners();
   }
 
@@ -146,19 +192,25 @@ class World extends ChangeNotifier {
     city.treeStyle =
         TreeStyle.values[(city.treeStyle.index + 1) % TreeStyle.values.length];
     _rebuild();
+    _queueTrees();
     notifyListeners();
   }
 
   void resetBlocks() {
     city.resetBlocks();
     _rebuild();
+    _queueAll();
     swapEvents++;
     notifyListeners();
   }
 
   void resetHouses() {
+    final touched = [
+      for (final b in city.blocks)
+        if (b.content.monuments.isNotEmpty) b,
+    ];
     city.resetHouses();
-    _rebuild();
+    _rebuildAnimated(touched);
     buildEvents++;
     notifyListeners();
   }
@@ -235,6 +287,14 @@ class World extends ChangeNotifier {
   }
 
   void tap(double x, double y) {
+    if (_intro) {
+      // A click skips the opening construction.
+      _finishJobs();
+      city.updateShadows(scene);
+      city.refreshHeights(scene);
+      notifyListeners();
+      return;
+    }
     if (moveBlocks) {
       final hit = renderer.cam.groundHit(x, y, 0.3);
       final b = hit == null ? null : city.blockAt(hit.$1, hit.$2);
@@ -301,17 +361,22 @@ class World extends ChangeNotifier {
     _setMoveFrom(null);
     _select(null);
     city.swap(a, b);
-    // Only the two blocks are rebuilt (#4).
-    city.rebuildBlocks([a, b], scene);
+    // Only the two blocks are rebuilt (#4), and they are built up again (#6).
+    _rebuildAnimated([a, b]);
     swapEvents++;
-    // Drop the two blocks back into place.
-    _drops.clear();
-    for (final nb in [city.blockAtCell(a.i, a.j), city.blockAtCell(b.i, b.j)]) {
-      for (final o in nb.objects) {
-        _drops.add(_Drop(o, o.y));
-      }
+  }
+
+  /// Rebuilds [blocks]: old buildings shrink away, new ones rise (#6).
+  void _rebuildAnimated(List<Block> blocks) {
+    if (blocks.isEmpty) return;
+    final old = [for (final b in blocks) ...b.objects];
+    _jobs.removeWhere((j) => old.contains(j.obj));
+    city.rebuildBlocks(blocks, scene);
+    _demolish(old);
+    var k = 0;
+    for (final b in blocks) {
+      _queueBlock(city.blockAtCell(b.i, b.j), 0.35 + 0.25 * k++);
     }
-    _dropT = 0;
   }
 
   void setMonument(Lot l, Monument? m) {
@@ -323,19 +388,155 @@ class World extends ChangeNotifier {
     for (final o in l.objects) {
       o.highlight = 0;
     }
+    final old = List.of(l.objects);
+    _jobs.removeWhere((j) => old.contains(j.obj));
     city.buildLot(l, scene);
-    final target = <double>[];
-    for (final o in l.objects) {
-      target.add(o.sy);
-      o.sy = 0.01;
-      if (o.dynamicLight) o.visible = false;
-    }
-    _builds.removeWhere((b) => identical(b.lot, l));
-    _builds.add(_Build(l, List.of(l.objects), target));
-    weather.dust(scene.particles, l.cx, 0.5, l.cz, 40);
+    _demolish(old);
+    _queueLot(l, 0.35);
     city.updateShadows(scene);
-    buildEvents++;
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------
+  // Construction queue (#6).
+
+  void _queueAll({bool intro = false}) {
+    // Blocks rise one after another, starting from the middle of town.
+    final order = List.of(city.blocks)
+      ..sort((a, b) {
+        double d(Block x) => x.cx * x.cx + x.cz * x.cz;
+        return d(a).compareTo(d(b));
+      });
+    var k = 0;
+    for (final b in order) {
+      if (b.objects.isEmpty) continue;
+      _queueBlock(b, (intro ? 0.4 : 0.1) + 0.14 * k++);
+    }
+    _intro = intro;
+  }
+
+  void _queueBlock(Block b, double delay) {
+    var k = 0;
+    final lotObjs = <SceneObject>{};
+    for (final l in b.lots) {
+      lotObjs.addAll(l.objects);
+      _queueLot(l, delay + 0.12 * k++);
+    }
+    final r = math.Random(b.content.seed);
+    for (final o in b.objects) {
+      if (lotObjs.contains(o)) continue;
+      _add(o, delay + r.nextDouble() * 0.9, 0.55, _JobKind.grow, b);
+    }
+  }
+
+  void _queueLot(Lot l, double delay) {
+    for (final o in l.objects) {
+      if (o.dynamicLight) {
+        // Sails and wheels appear once the structure stands.
+        _add(o, delay + 1.4, 0.5, _JobKind.grow, l.block);
+      } else {
+        final parts = o.mesh.partCount;
+        final dur = (0.5 + 0.09 * parts).clamp(0.8, 2.6);
+        _add(o, delay, dur, _JobKind.parts, l.block);
+      }
+    }
+  }
+
+  void _queueTrees() {
+    final r = math.Random(7);
+    for (final t in city.trees) {
+      _add(t.obj, r.nextDouble() * 1.2, 0.5, _JobKind.grow, null);
+    }
+  }
+
+  void _add(SceneObject o, double delay, double dur, _JobKind kind, Block? b) {
+    final j = _Job(o, time + delay, dur, kind, b);
+    if (kind == _JobKind.parts) o.build = 0;
+    if (kind == _JobKind.grow) o.visible = false;
+    _jobs.add(j);
+  }
+
+  void _demolish(List<SceneObject> old) {
+    for (final o in old) {
+      o.highlight = 0;
+      if (!o.visible) continue;
+      scene.objects.add(o);
+      _jobs.add(_Job(o, time, 0.35, _JobKind.demolish, null));
+    }
+  }
+
+  /// Completes all construction immediately (tests, skipping the intro).
+  void finishConstruction() {
+    _finishJobs();
+    city.updateShadows(scene);
+    city.refreshHeights(scene);
+  }
+
+  /// Completes every pending job at once (skip the intro, full rebuilds).
+  void _finishJobs() {
+    for (final j in _jobs) {
+      _applyJob(j, 1);
+      if (j.kind == _JobKind.demolish) scene.objects.remove(j.obj);
+    }
+    _jobs.clear();
+    _intro = false;
+  }
+
+  void _applyJob(_Job j, double t) {
+    final o = j.obj;
+    switch (j.kind) {
+      case _JobKind.parts:
+        o.build = t;
+      case _JobKind.grow:
+        final e = t >= 1 ? 1.0 : _easeOutBack(t);
+        o.visible = t > 0;
+        o.sx = j.sx * e;
+        o.sy = j.sy * e;
+        o.sz = j.sz * e;
+      case _JobKind.demolish:
+        final e = 1 - t * t;
+        o.sy = math.max(0.001, j.sy * e);
+        o.sx = j.sx * (0.85 + 0.15 * e);
+        o.sz = j.sz * (0.85 + 0.15 * e);
+    }
+  }
+
+  void _runJobs() {
+    if (_jobs.isEmpty) return;
+    var finished = false;
+    for (var k = _jobs.length - 1; k >= 0; k--) {
+      final j = _jobs[k];
+      final t = (time - j.start) / j.dur;
+      if (t <= 0) {
+        _applyJob(j, 0);
+        continue;
+      }
+      if (!j.started) {
+        j.started = true;
+        if (j.kind == _JobKind.parts) {
+          final o = j.obj;
+          weather.dust(scene.particles, o.x, o.y + 0.3, o.z, 14);
+          buildEvents++;
+        }
+      }
+      if (t >= 1) {
+        _applyJob(j, 1);
+        if (j.kind == _JobKind.demolish) scene.objects.remove(j.obj);
+        _jobs.removeAt(k);
+        finished = true;
+      } else {
+        _applyJob(j, t);
+      }
+    }
+    if (_jobs.isEmpty) {
+      _intro = false;
+      city.updateShadows(scene);
+      city.refreshHeights(scene);
+      notifyListeners();
+    } else if (finished && time - _shadowsAt > 0.4) {
+      _shadowsAt = time;
+      city.updateShadows(scene);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -393,40 +594,8 @@ class World extends ChangeNotifier {
       s.obj.spin += rate * dt;
     }
 
-    // Construction animation.
-    for (final b in List.of(_builds)) {
-      b.t += dt / 1.8;
-      final t = math.min(1.0, b.t);
-      final e = _easeOutBack(t);
-      for (var k = 0; k < b.objs.length; k++) {
-        final o = b.objs[k];
-        if (o.dynamicLight) continue;
-        o.sy = math.max(0.01, b.target[k] * e);
-      }
-      if (time % 0.25 < dt && t < 0.8) {
-        weather.dust(scene.particles, b.lot.cx, 0.4, b.lot.cz, 6);
-      }
-      if (b.t >= 1) {
-        for (var k = 0; k < b.objs.length; k++) {
-          b.objs[k].sy = b.target[k];
-          b.objs[k].visible = true;
-        }
-        _builds.remove(b);
-        city.updateShadows(scene);
-        city.refreshHeights(scene);
-        notifyListeners();
-      }
-    }
-
-    // Block swap drop animation.
-    if (_dropT < 1) {
-      _dropT = math.min(1, _dropT + dt / 0.7);
-      final e = 1 - _easeOutBounce(_dropT);
-      for (final d in _drops) {
-        d.obj.y = d.baseY + e * 14;
-      }
-      if (_dropT >= 1) _drops.clear();
-    }
+    // Construction queue.
+    _runJobs();
 
     // Lifted block in move mode hovers.
     if (moveFrom != null) {
@@ -465,19 +634,4 @@ class World extends ChangeNotifier {
 
   static double _easeInOut(double t) =>
       t < 0.5 ? 4 * t * t * t : 1 - math.pow(-2 * t + 2, 3) / 2;
-
-  static double _easeOutBounce(double t) {
-    const n1 = 7.5625, d1 = 2.75;
-    if (t < 1 / d1) return n1 * t * t;
-    if (t < 2 / d1) {
-      t -= 1.5 / d1;
-      return n1 * t * t + 0.75;
-    }
-    if (t < 2.5 / d1) {
-      t -= 2.25 / d1;
-      return n1 * t * t + 0.9375;
-    }
-    t -= 2.625 / d1;
-    return n1 * t * t + 0.984375;
-  }
 }

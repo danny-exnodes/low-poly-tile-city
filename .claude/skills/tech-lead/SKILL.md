@@ -30,7 +30,7 @@ description: Vai TechLead của Low-Poly Tile City — tìm nguyên nhân gốc 
 | updateShadows | ≤ 5 ms |
 | dựng toàn thành phố | ≤ 30 ms |
 | đổi chỗ 2 khối | ≤ 10 ms |
-| tam giác vẽ mặc định | ≤ 90k |
+| tam giác vẽ mặc định | ≤ 90k (v0.0.3: ~43k) |
 
 Trình duyệt (swiftshader, chỉ so tương đối): tilt-shift tăng thời gian khung ≤ ×1,3.
 
@@ -67,3 +67,6 @@ lib/debug_hook.dart  window.__tileCity (chỉ khi --dart-define=DEBUG_HOOK=true)
 - v0.0.2: bóng = hull theo từng mức độ cao của AABB part (projection chỉ tịnh tiến điểm cùng độ cao) → 34 ms còn ~2 ms.
 - v0.0.2: tilt-shift blur bản thu nhỏ 35% + một drawVertices hai dải → GPU ×3,1 còn ×1,15.
 - v0.0.2: LOD lười (mask + lọc typed array) — chụp snapshot builder làm dựng chậm hơn.
+- v0.0.3: bevel trên mọi khối làm tam giác +50%; chỉ bo cạnh nơi nhìn thấy (bỏ ở nhà phố liền dãy, khối lá nhỏ, ống khói).
+- v0.0.3: siêu lấy mẫu ×1,5 tốn ~40% fps trên swiftshader → AA thích nghi (tắt khi < 45 fps), không bật cứng.
+- v0.0.3: hiệu ứng xây dựa vào part; decal phải cùng part với tường (dùng `_body` + `extras`).

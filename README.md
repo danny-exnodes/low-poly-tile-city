@@ -27,12 +27,16 @@ Một thị trấn low-poly ấm áp, sinh thủ tục trên bàn cờ ô vuông
 
 ## Phiên bản
 
+**Mới trong v0.0.3**
+- Phong cách low-poly mềm: ánh sáng dịu (hết cháy sáng giữa trưa), chân tường và mặt dưới tán cây tối dần, cạnh tường bo tròn, tán cây tròn, tượng đài nhiều cạnh hơn, khử răng cưa trên màn hình thường (tự tắt nếu máy chậm; nút **Smooth edges**) (#5).
+- Công trình được xây dần từng tầng, từ dưới lên; mở app thấy thị trấn dựng từng khối từ trung tâm ra (click để bỏ qua); đổi tượng đài, đổi chỗ khối, Reset houses đều có nhà cũ thu xuống và nhà mới mọc lên (#6).
+
 **Mới trong v0.0.2**
 - Mở rộng bản đồ chỉ thêm ô đất trống; ô bị cắt khi thu nhỏ được trả lại khi mở rộng (#3).
 - Giảm lag: bóng đổ khi kéo Light 34 → ~2 ms, tilt-shift tốn GPU ×3,1 → ×1,15, đổi chỗ 2 khối 40–52 → ~3 ms, ít hơn 40% tam giác phải vẽ (LOD cây, cành cây chỉ vẽ mùa đông); benchmark chạy trong CI (#4).
 - Quy trình nhóm agent (`.claude/skills/`), `CLAUDE.md`, checkpoint phát hành (#2).
 
-Các bản: [v0.0.2](docs/releases/v0.0.2.md) · [v0.0.1](docs/releases/v0.0.1.md) — lộ trình ở issue #1.
+Các bản: [v0.0.3](docs/releases/v0.0.3.md) · [v0.0.2](docs/releases/v0.0.2.md) · [v0.0.1](docs/releases/v0.0.1.md) — lộ trình ở issue #1.
 
 ## Chạy và build
 

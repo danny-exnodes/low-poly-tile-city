@@ -3,6 +3,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'engine/lighting.dart';
+import 'world/monuments.dart';
 import 'world/world.dart';
 
 /// Built only with `--dart-define=DEBUG_HOOK=true`: QA scripts drive the
@@ -57,6 +58,35 @@ void installDebugHook(World w) {
         w.gust();
       case 'devil':
         w.leafDevil();
+      case 'build':
+        // [blockIndex, lotIndex, monumentName or null]
+        final l = w.city.blocks[v[0] as int].lots[v[1] as int];
+        final name = v[2] as String?;
+        w.setMonument(
+          l,
+          name == null
+              ? null
+              : Monument.values.firstWhere((m) => m.name == name),
+        );
+      case 'camera':
+        final c = w.renderer.cam, mv = v as Map<String, dynamic>;
+        c.tx = (mv['tx'] as num?)?.toDouble() ?? c.tx;
+        c.tz = (mv['tz'] as num?)?.toDouble() ?? c.tz;
+        c.dist = (mv['dist'] as num?)?.toDouble() ?? c.dist;
+        c.yaw = (mv['yaw'] as num?)?.toDouble() ?? c.yaw;
+        c.pitch = (mv['pitch'] as num?)?.toDouble() ?? c.pitch;
+      case 'lot':
+        // [blockIndex, lotIndex] -> moves the camera to it.
+        final l = w.city.blocks[v[0] as int].lots[v[1] as int];
+        w.renderer.cam
+          ..tx = l.cx
+          ..tz = l.cz
+          ..dist = 90;
+      case 'smooth':
+        w.smoothEdges = v as bool;
+        w.autoSmooth = false;
+      case 'supersample':
+        w.supersampleFactor = (v as num).toDouble();
       case 'lod':
         w.renderer.lodScale = (v as num).toDouble();
     }

@@ -41,7 +41,7 @@ double _avg(void Function() f, int n) {
 
 void main() {
   test('performance budget', () {
-    final w = World();
+    final w = World()..finishConstruction();
     for (var i = 0; i < 300; i++) {
       w.update(1 / 60);
     }

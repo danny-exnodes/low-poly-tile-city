@@ -145,9 +145,9 @@ class Renderer {
     final a21 = cam.fx * m01 + cam.fy * m11 + cam.fz * m21;
     final a22 = cam.fx * m02 + cam.fy * m12 + cam.fz * m22;
     final ox = o.x - cam.ex, oy = o.y - cam.ey, oz = o.z - cam.ez;
-    final b0 = cam.rx * ox + cam.ry * oy + cam.rz * oz;
-    final b1 = cam.ux * ox + cam.uy * oy + cam.uz * oz;
-    final b2 = cam.fx * ox + cam.fy * oy + cam.fz * oz;
+    final ob0 = cam.rx * ox + cam.ry * oy + cam.rz * oz;
+    final ob1 = cam.ux * ox + cam.uy * oy + cam.uz * oz;
+    final ob2 = cam.fx * ox + cam.fy * oy + cam.fz * oz;
     final focal = cam.focal, ccx = cam.cx, ccy = cam.cy;
 
     final lit = lod ? o.lodLit! : o.lit!;
@@ -180,12 +180,39 @@ class Renderer {
     var pos = _pos, col = _col, tob = _triObj;
     var n = _n;
 
-    // Triangle ranges to draw, in order.
+    // Triangle ranges to draw, in order, each with a vertical offset (the
+    // part currently dropping into place during construction, #6).
     final parts = m.partCount;
     var nr = 0;
     var rs = _ranges;
-    if (rs.length < parts * 2 + 2) rs = _ranges = Int32List(parts * 2 + 64);
-    if (!m.sortParts || parts <= 1) {
+    if (rs.length < parts * 2 + 2) {
+      rs = _ranges = Int32List(parts * 2 + 64);
+      _rangeDy = Float64List(parts + 32);
+    }
+    final dys = _rangeDy;
+    final building = o.build < 1 && parts > 0;
+    final buildK = o.build * parts;
+    final built = buildK.floor();
+    final dropDy = (1 - _bounce(buildK - built)) * 3.5;
+    final rank = building ? m.partRank : null;
+    // Returns the offset for part [pi], or NaN when it is not built yet.
+    double partDy(int pi) {
+      final rk = rank![pi];
+      if (rk < built) return 0;
+      if (rk == built && buildK > built) return dropDy;
+      return double.nan;
+    }
+
+    if (building && !m.sortParts) {
+      for (var pi = 0; pi < parts; pi++) {
+        final dy = partDy(pi);
+        if (dy.isNaN) continue;
+        dys[nr >> 1] = dy;
+        rs[nr++] = m.partStart[pi];
+        rs[nr++] = m.partStart[pi + 1];
+      }
+    } else if (!m.sortParts || parts <= 1) {
+      dys[0] = 0;
       rs[0] = 0;
       rs[1] = m.triCount;
       nr = 2;
@@ -196,20 +223,28 @@ class Renderer {
         final lx = (pb[k * 6] + pb[k * 6 + 3]) / 2;
         final ly = (pb[k * 6 + 1] + pb[k * 6 + 4]) / 2;
         final lz = (pb[k * 6 + 2] + pb[k * 6 + 5]) / 2;
-        final d = a20 * lx + a21 * ly + a22 * lz + b2;
+        final d = a20 * lx + a21 * ly + a22 * lz + ob2;
         keys[k] = (d * 1000).floorToDouble() * 4096 + k;
       }
       keys.sort();
       for (var k = parts - 1; k >= 0; k--) {
         final pi = (keys[k] % 4096).toInt();
+        final dy = building ? partDy(pi) : 0.0;
+        if (dy.isNaN) continue;
+        dys[nr >> 1] = dy;
         rs[nr++] = m.partStart[pi];
         rs[nr++] = m.partStart[pi + 1];
       }
     }
     for (var ri = 0; ri < nr; ri += 2) {
+      final dy = dys[ri >> 1];
+      final b0 = ob0 + cam.ry * dy;
+      final b1 = ob1 + cam.uy * dy;
+      final b2 = ob2 + cam.fy * dy;
       for (var t = rs[ri]; t < rs[ri + 1]; t++) {
-        var c = lit[t];
+        var c = lit[t * 3];
         if (c == 0) continue;
+        var c1 = lit[t * 3 + 1], c2 = lit[t * 3 + 2];
         final i = t * 9;
         var lx = p[i], ly = p[i + 1], lz = p[i + 2];
         final z0 = a20 * lx + a21 * ly + a22 * lz + b2;
@@ -242,7 +277,11 @@ class Renderer {
         final y2 = ccy - (a10 * lx + a11 * ly + a12 * lz + b1) * focal / z2;
         // Back-face cull in screen space.
         if ((x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0) >= 0) continue;
-        if (hl > 0) c = mixColor(c, 0xFFFFB066, hl);
+        if (hl > 0) {
+          c = mixColor(c, 0xFFFFB066, hl);
+          c1 = mixColor(c1, 0xFFFFB066, hl);
+          c2 = mixColor(c2, 0xFFFFB066, hl);
+        }
         final k = n * 6;
         pos[k] = x0;
         pos[k + 1] = y0;
@@ -252,8 +291,8 @@ class Renderer {
         pos[k + 5] = y2;
         final kc = n * 3;
         col[kc] = c;
-        col[kc + 1] = c;
-        col[kc + 2] = c;
+        col[kc + 1] = c1;
+        col[kc + 2] = c2;
         tob[n] = drawId;
         n++;
       }
@@ -368,7 +407,24 @@ class Renderer {
   }
 
   Int32List _ranges = Int32List(256);
-  ui.Image? _prevBlur;
+  Float64List _rangeDy = Float64List(160);
+
+  static double _bounce(double t) {
+    const n1 = 7.5625, d1 = 2.75;
+    if (t < 1 / d1) return n1 * t * t;
+    if (t < 2 / d1) {
+      t -= 1.5 / d1;
+      return n1 * t * t + 0.75;
+    }
+    if (t < 2.5 / d1) {
+      t -= 2.25 / d1;
+      return n1 * t * t + 0.9375;
+    }
+    t -= 2.625 / d1;
+    return n1 * t * t + 0.984375;
+  }
+
+  ui.Image? _prevBlur, _prevBig;
   Float64List _keys = Float64List(1024);
   final _drawList = <SceneObject>[];
   final _drawLod = <bool>[];
@@ -382,6 +438,7 @@ class Renderer {
     ui.Size size,
     Scene scene, {
     bool tiltShift = true,
+    double supersample = 1,
   }) {
     stats.triangles = 0;
     stats.drawCalls = 0;
@@ -481,7 +538,28 @@ class Renderer {
 
     final pic = rec.endRecording();
     stats.cpuMs = stats.cpuMs * 0.9 + sw.elapsedMicroseconds / 1000 * 0.1;
-    canvas.drawPicture(pic);
+    if (supersample > 1) {
+      // drawVertices has no anti-aliasing: rasterise the frame larger and
+      // let filtered down-sampling smooth the edges (#5).
+      final ss = supersample;
+      final iw = (size.width * ss).ceil(), ih = (size.height * ss).ceil();
+      final rec3 = ui.PictureRecorder();
+      ui.Canvas(rec3)
+        ..scale(ss)
+        ..drawPicture(pic);
+      final big = rec3.endRecording().toImageSync(iw, ih);
+      _prevBig?.dispose();
+      _prevBig = big;
+      canvas.drawImageRect(
+        big,
+        ui.Rect.fromLTWH(0, 0, iw.toDouble(), ih.toDouble()),
+        rect,
+        ui.Paint()..filterQuality = ui.FilterQuality.medium,
+      );
+      stats.drawCalls++;
+    } else {
+      canvas.drawPicture(pic);
+    }
 
     if (tiltShift) {
       // Blur a 35% copy of the frame (cheap) and stretch it over the top and

@@ -99,7 +99,10 @@ Mesh buildTree(int species, int variant) {
       b.cylinder(0, 0, 0, h + 0.6, 0.18, 5, Pal.trunk, capTop: false);
       _branches(b, h, r);
       b.mat = Mat.foliage;
-      _blob(b, 0, h + 1.3, 0, 1.6 + r.nextDouble() * 0.4, r, jitter);
+      // Geodesic crown with a slightly wobbly outline: soft and round (#5).
+      final rad = 1.6 + r.nextDouble() * 0.4;
+      double wob() => (r.nextDouble() - 0.5) * 0.14;
+      b.icosphere(V3(0, h + 1.3, 0), rad, jitter, squash: 0.92, wobble: wob);
     case 1: // pine
       b.cylinder(0, 0, 0, 1.2, 0.2, 5, Pal.trunk, capTop: false);
       b.mat = Mat.conifer;
@@ -131,7 +134,7 @@ Mesh buildTree(int species, int variant) {
       b.part();
       final ys = [h, h + 1.2, h + 3.2, h + 4.8, h + 5.6];
       final rs = [0.0, 1.0, 1.15, 0.7, 0.0];
-      _jitterLathe(b, ys, rs, 6, r, jitter);
+      _jitterLathe(b, ys, rs, 8, r, jitter);
       b.endPart();
     default: // cluster of chunky blobs (voxel-like)
       final h = 1.8 + r.nextDouble() * 0.5;
@@ -150,7 +153,7 @@ Mesh buildTree(int species, int variant) {
   }
   final full = b.build();
   full.lod = _treeLod(full, species);
-  full.lodPx = 11;
+  full.lodPx = 20;
   return full;
 }
 
@@ -189,17 +192,16 @@ Mesh _treeLod(Mesh full, int species) {
       capTop: false,
     );
   } else {
-    final my = species == 2 ? y0 + (y1 - y0) * 0.45 : (y0 + y1) / 2;
-    b.lathe(
-      cx,
-      cz,
-      [y0, my, y1],
-      [0, math.max(rx, rz) * 0.95, 0],
-      4,
-      rgb8(150),
-      colors: [rgb8(110), rgb8(200)],
-      capTop: false,
-      rot: math.pi / 4,
+    // Rounder stand-in (20 triangles) so the LOD can kick in earlier.
+    final cy = (y0 + y1) / 2;
+    final rr = math.max(rx, rz) * 0.92;
+    var k = 0;
+    b.icosphere(
+      V3(cx, cy, cz),
+      rr,
+      () => rgb8(const [120, 170, 210][k++ % 3]),
+      subdiv: 0,
+      squash: (y1 - y0) / 2 / rr,
     );
   }
   return b.build();
@@ -222,27 +224,6 @@ void _branches(MeshBuilder b, double h, math.Random r) {
     );
   }
   b.mat = m;
-}
-
-void _blob(
-  MeshBuilder b,
-  double cx,
-  double cy,
-  double cz,
-  double rad,
-  math.Random r,
-  int Function() jitter,
-) {
-  b.part();
-  const rings = 3, segs = 6;
-  final ys = <double>[], rs = <double>[];
-  for (var i = 0; i <= rings; i++) {
-    final t = math.pi * i / rings;
-    ys.add(cy - math.cos(t) * rad * 0.9);
-    rs.add(math.sin(t) * rad * (0.9 + r.nextDouble() * 0.2));
-  }
-  _jitterLathe(b, ys, rs, segs, r, jitter, cx: cx, cz: cz);
-  b.endPart();
 }
 
 void _jitterLathe(

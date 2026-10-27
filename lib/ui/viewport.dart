@@ -125,6 +125,7 @@ class _ScenePainter extends CustomPainter {
       size,
       world.scene,
       tiltShift: world.tiltShift,
+      supersample: world.smoothEdges ? world.supersampleFactor : 1,
     );
   }
 

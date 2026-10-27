@@ -67,6 +67,11 @@ class _CityScreenState extends State<CityScreen>
     super.initState();
     _ticker = createTicker(_tick)..start();
     if (debugHookEnabled) installDebugHook(world);
+    // High-DPI screens hide jaggies already; supersampling there only costs.
+    final dpr =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    world.smoothEdges = dpr < 1.5;
+    world.autoSmooth = world.smoothEdges;
   }
 
   void _tick(Duration now) {
@@ -82,12 +87,13 @@ class _CityScreenState extends State<CityScreen>
     _frames++;
     _statT += dt;
     if (_statT >= 0.5) {
-      world.fps = _frames / _statT;
+      world.reportFps(_frames / _statT);
       _frames = 0;
       _statT = 0;
       final r = world.renderer.stats;
       final c = world.city;
       stats.value =
+          '${world.buildingBlocks > 0 ? 'building ${world.buildingBlocks} blocks… · ' : ''}'
           '${c.nx * c.nz} blocks · ${c.houseCount} houses · '
           '${world.fps.round()} fps\n${r.drawCalls} draw calls · '
           '${_k(r.triangles)} triangles\n'
