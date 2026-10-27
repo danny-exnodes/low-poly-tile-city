@@ -41,6 +41,20 @@ jobs:
         # Pages serves the site from /<repo-name>/, so the base href must match.
         run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
 
+      - name: Package web build
+        if: github.event_name != 'pull_request'
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/version: *//; s/\+.*//')
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          (cd build/web && zip -qr "$GITHUB_WORKSPACE/low-poly-tile-city-web-v$VERSION.zip" .)
+
+      - name: Upload release bundle
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: low-poly-tile-city-web-v*.zip
+
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
@@ -60,3 +74,35 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # Creates tag v<pubspec version> and a GitHub release the first time a
+  # version reaches the default branch. Bump `version:` in pubspec.yaml to release.
+  release:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed -E 's/version: *//; s/\+.*//')
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping."
+            exit 0
+          fi
+          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          gh release create "$TAG" low-poly-tile-city-web-v*.zip \
+            --target "$GITHUB_SHA" \
+            --title "Low-Poly Tile City $TAG" \
+            --generate-notes \
+            --notes "Play it live: $PAGES_URL
+
+          The attached zip is the static web build; serve it from any web host."
