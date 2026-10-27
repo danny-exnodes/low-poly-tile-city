@@ -6,6 +6,7 @@ import 'engine/lighting.dart';
 import 'world/buildings.dart';
 import 'world/city.dart';
 import 'world/monuments.dart';
+import 'world/save.dart';
 import 'world/world.dart';
 
 /// Built only with `--dart-define=DEBUG_HOOK=true`: QA scripts drive the
@@ -114,6 +115,12 @@ void installDebugHook(World w) {
           }
           if (m['rotSteps'] != null) e.rotSteps = m['rotSteps'] as int;
           if (m['demolished'] != null) e.demolished = m['demolished'] as bool;
+        });
+      case 'share':
+        // Returns the share code in stats under 'code'.
+        return jsonEncode({
+          ...jsonDecode(stats()),
+          'code': TownState.encode(w),
         });
       case 'undo':
         w.undo();

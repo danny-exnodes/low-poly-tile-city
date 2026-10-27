@@ -1,7 +1,8 @@
 // Usage: node shoot.cjs <url> <outDir> '[["name","js"], ...]'
 // Each step runs `js` in the page with helper c(obj) = __tileCity.cmd(obj),
 // waits WAIT ms (default 1500) and saves <outDir>/<name>.png. Also supports
-// mouse steps: ["name", "@click x y"], ["name", "@drag x y dx dy"], ["name", "@wheel dy"].
+// mouse steps: ["name", "@click x y"], ["name", "@drag x y dx dy"], ["name", "@wheel dy"],
+// ["name", "@hold x y"] (long press), ["name", "@reload"], ["name", "@goto <url>"].
 // Env: W, H (viewport), WAIT.
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -20,9 +21,18 @@ const fs = require('fs');
   for (const [name, js] of steps) {
     if (js.startsWith('@')) {
       const [cmd, ...a] = js.slice(1).split(' ').map((x, i) => (i ? +x : x));
+      // (for @goto the URL is read from js directly)
       if (cmd === 'click') await page.mouse.click(a[0], a[1]);
       if (cmd === 'drag') { await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(a[0] + a[2], a[1] + a[3], { steps: 8 }); await page.mouse.up(); }
       if (cmd === 'wheel') { await page.mouse.move(W / 2, H / 2); await page.mouse.wheel(0, a[0]); }
+      if (cmd === 'reload' || cmd === 'goto') {
+        // "@reload" keeps localStorage; "@goto <url>" opens another URL (share links).
+        if (cmd === 'reload') await page.reload({ waitUntil: 'load' });
+        else await page.goto(js.slice(6).trim(), { waitUntil: 'load' });
+        await page.waitForFunction(() => window.__tileCity, null, { timeout: 60000 });
+        await page.waitForTimeout(3000);
+      }
+      if (cmd === 'hold') { await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.waitForTimeout(700); await page.mouse.up(); }
     } else if (js) {
       const r = await page.evaluate((code) => {
         const c = (o) => JSON.parse(window.__tileCity.cmd(JSON.stringify(o)));

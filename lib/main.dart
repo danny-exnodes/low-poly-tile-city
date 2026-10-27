@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
@@ -15,6 +16,8 @@ import 'world/city.dart';
 import 'ui/settings_panel.dart';
 import 'ui/viewport.dart';
 import 'ui/wind_gauge.dart';
+import 'web_bridge.dart';
+import 'world/save.dart';
 import 'world/world.dart';
 
 void main() {
@@ -66,11 +69,24 @@ class _CityScreenState extends State<CityScreen>
   double _statT = 0;
   int _frames = 0;
 
+  final toast = ValueNotifier<String?>(null);
+  Timer? _saveTimer, _toastTimer;
+  String? _lastSaved;
+
   @override
   void initState() {
     super.initState();
     _ticker = createTicker(_tick)..start();
     if (debugHookEnabled) installDebugHook(world);
+    _restore();
+    // Autosave a few seconds after anything changes (#9).
+    _saveTimer = Timer.periodic(const Duration(seconds: 3), (_) => _save());
+    WidgetsBinding.instance.addPostFrameCallback((_) => WebBridge.hideLoader());
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    // Phones: no tilt-shift by default (#11).
+    if (view.physicalSize.width / view.devicePixelRatio < 640) {
+      world.tiltShift = false;
+    }
     // High-DPI screens hide jaggies already; supersampling there only costs.
     final dpr =
         WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
@@ -106,11 +122,48 @@ class _CityScreenState extends State<CityScreen>
     if (_frames % 6 == 0) gauge.value++;
   }
 
+  /// Shared link first, then the autosave, else a fresh town (#9).
+  void _restore() {
+    final shared = WebBridge.sharedTown();
+    final saved = shared ?? WebBridge.loadSaved();
+    if (saved == null) return;
+    final state = TownState.decode(saved);
+    if (state != null && TownState.apply(world, state)) {
+      _lastSaved = saved;
+      if (shared != null) _showToast('Opened a shared town');
+    }
+  }
+
+  void _save() {
+    final code = TownState.encode(world);
+    if (code == _lastSaved) return;
+    _lastSaved = code;
+    WebBridge.save(code);
+  }
+
+  Future<void> _share() async {
+    final url = WebBridge.shareLink(TownState.encode(world));
+    final ok = await WebBridge.copy(url);
+    _showToast(
+      ok ? 'Link copied — share your town!' : 'Link is in the address bar',
+    );
+  }
+
+  void _showToast(String text) {
+    toast.value = text;
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(milliseconds: 2600), () {
+      toast.value = null;
+    });
+  }
+
   static String _k(int n) =>
       n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
 
   @override
   void dispose() {
+    _saveTimer?.cancel();
+    _toastTimer?.cancel();
     _ticker.dispose();
     audio.dispose();
     super.dispose();
@@ -133,6 +186,7 @@ class _CityScreenState extends State<CityScreen>
   }
 
   Widget _scaffold(bool compact) {
+    final context = this.context;
     return Scaffold(
       backgroundColor: const Color(0xFF1E1914),
       body: Stack(
@@ -142,9 +196,10 @@ class _CityScreenState extends State<CityScreen>
           ),
           // House / building / tile panel.
           Positioned(
-            left: 16,
-            top: 16,
-            bottom: 90,
+            left: compact ? 8 : 16,
+            top: compact ? 8 : 16,
+            right: compact ? 8 : null,
+            bottom: compact ? 120 : 90,
             child: Align(
               alignment: Alignment.topLeft,
               child: SingleChildScrollView(
@@ -172,24 +227,78 @@ class _CityScreenState extends State<CityScreen>
             ),
           ),
           // Settings.
-          Positioned(
-            right: 16,
-            top: 16,
-            bottom: compact ? 96 : 16,
-            child: Align(
-              alignment: Alignment.topRight,
-              child: SingleChildScrollView(
-                child: SettingsPanel(world: world, stats: stats),
+          if (compact)
+            // Phones: settings become a bottom sheet, collapsed at first
+            // (#11).
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: SafeArea(
+                top: false,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+                  ),
+                  child: SingleChildScrollView(
+                    child: SettingsPanel(
+                      world: world,
+                      stats: stats,
+                      onShare: _share,
+                      compact: true,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            Positioned(
+              right: 16,
+              top: 16,
+              bottom: 16,
+              child: Align(
+                alignment: Alignment.topRight,
+                child: SingleChildScrollView(
+                  child: SettingsPanel(
+                    world: world,
+                    stats: stats,
+                    onShare: _share,
+                  ),
+                ),
               ),
             ),
-          ),
           // Wind gauge.
+          if (!compact)
+            Positioned(
+              left: 16,
+              bottom: 16,
+              child: ValueListenableBuilder(
+                valueListenable: gauge,
+                builder: (context, _, _) => WindGauge(wind: world.wind),
+              ),
+            ),
+          // Toast.
           Positioned(
-            left: 16,
-            bottom: 16,
-            child: ValueListenableBuilder(
-              valueListenable: gauge,
-              builder: (context, _, _) => WindGauge(wind: world.wind),
+            left: 0,
+            right: 0,
+            top: compact ? 70 : 24,
+            child: IgnorePointer(
+              child: ValueListenableBuilder<String?>(
+                valueListenable: toast,
+                builder: (context, t, _) => AnimatedOpacity(
+                  opacity: t == null ? 0 : 1,
+                  duration: const Duration(milliseconds: 200),
+                  child: Center(
+                    child: GlassPanel(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      child: Text(t ?? '', style: UI.label),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
           if (!compact)

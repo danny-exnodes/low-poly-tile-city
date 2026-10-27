@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -29,11 +30,22 @@ class _CityViewportState extends State<CityViewport> {
       HardwareKeyboard.instance.isShiftPressed ||
       HardwareKeyboard.instance.isControlPressed;
 
+  Timer? _hold;
+
   void _down(PointerDownEvent e) {
     _pointers[e.pointer] = e.localPosition;
+    _hold?.cancel();
     if (_pointers.length == 1) {
       _downAt = e.localPosition;
       _moved = false;
+      // Press and hold: jump into Build mode on that tile (#11).
+      final at = e.localPosition;
+      _hold = Timer(const Duration(milliseconds: 500), () {
+        if (!_moved && _pointers.length == 1) {
+          _moved = true; // swallow the tap on release
+          w.longPress(at.dx, at.dy);
+        }
+      });
       _panMode =
           e.buttons == kSecondaryMouseButton ||
           e.buttons == kMiddleMouseButton ||
@@ -70,6 +82,7 @@ class _CityViewportState extends State<CityViewport> {
 
   void _up(PointerEvent e) {
     _pointers.remove(e.pointer);
+    _hold?.cancel();
     if (_pointers.isEmpty) {
       if (!_moved && e is PointerUpEvent && _downAt != null) {
         w.tap(e.localPosition.dx, e.localPosition.dy);

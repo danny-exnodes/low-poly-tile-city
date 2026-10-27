@@ -22,9 +22,11 @@ So với bản cũ: `git worktree add /tmp/.../base <commit>`, chép `lib/debug_
   ```
 - `perf.cjs <url> [nhãn]` — 4 kịch bản 6 s: tĩnh có tilt-shift, đang xoay, đang kéo Light, tĩnh không tilt-shift. In fps, p50/p95 khung, "dart render" (EMA CPU render của app), số tam giác.
 - `grid.py out.png <cột> ảnh…` — ghép lưới ảnh trước/sau có nhãn.
+- `loadtime.cjs <url> [nhãn]` — giả lập mạng chậm (env `MBPS`, `RTT`), chụp lúc 300 ms và 2 s, đo thời gian đến khi app sẵn sàng (#10).
+- `shoot.cjs` còn có bước `"@hold x y"` (chạm giữ), `"@reload"` (tải lại, giữ localStorage — kiểm autosave), `"@goto <url>"` (mở link chia sẻ). Mỗi lần chạy là một profile mới (localStorage trống).
 
 ## Lệnh `__tileCity.cmd`
-`hour` (số giờ), `season` (`spring|summer|autumn|winter`), `resize` ([nx,nz]), `tilt` (bool), `orbit` ([dx,dy] px), `zoom` (hệ số), `wholeMap`, `advance` (giây mô phỏng), `gust`, `devil`, `lod` (hệ số ngưỡng LOD). Mọi lệnh trả về `stats()`: fps, cpuMs, simMs, triangles, drawCalls, objects, blocks, houses, kinds[], particles, building, hour, season.
+`hour` (số giờ), `mode` (`view|move|build`), `tile` ([i,j,kind]), `selectTile`, `selectLot`, `edit` ([block,lot,{floors,facade,roof,roofKind,style,rotSteps,demolished}]), `undo`, `build` ([block,lot,monument|null]), `lot`, `camera`, `share` (trả thêm `code`), `season` (`spring|summer|autumn|winter`), `resize` ([nx,nz]), `tilt` (bool), `orbit` ([dx,dy] px), `zoom` (hệ số), `wholeMap`, `advance` (giây mô phỏng), `gust`, `devil`, `lod` (hệ số ngưỡng LOD). Mọi lệnh trả về `stats()`: fps, cpuMs, simMs, triangles, drawCalls, objects, blocks, houses, kinds[], particles, building, hour, season.
 
 ## Kiểm theo loại thay đổi
 - **Dữ liệu/bố cục:** đếm trước/sau (unit test hoặc `stats().kinds`).
