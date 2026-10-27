@@ -24,6 +24,103 @@ enum HouseStyle {
 
 T _pick<T>(math.Random r, List<T> l) => l[r.nextInt(l.length)];
 
+enum RoofKind {
+  gable('Gable'),
+  hip('Hip'),
+  mansard('Mansard'),
+  flat('Flat');
+
+  final String label;
+  const RoofKind(this.label);
+}
+
+/// User choices that override what the seed would generate (#8).
+class HouseOptions {
+  final int? floors, facade, roof;
+  final RoofKind? roofKind;
+  const HouseOptions({this.floors, this.facade, this.roof, this.roofKind});
+  static const none = HouseOptions();
+}
+
+/// Styles a user can pick for an ordinary lot, with their floor range.
+const editableStyles = <HouseStyle, (int, int)>{
+  HouseStyle.cottage: (1, 3),
+  HouseStyle.townhouse: (2, 6),
+  HouseStyle.shop: (2, 6),
+  HouseStyle.apartment: (4, 10),
+  HouseStyle.office: (5, 25),
+};
+
+/// Roof shapes each editable style supports.
+const roofKindsFor = <HouseStyle, List<RoofKind>>{
+  HouseStyle.cottage: [RoofKind.gable, RoofKind.hip, RoofKind.flat],
+  HouseStyle.townhouse: [
+    RoofKind.mansard,
+    RoofKind.gable,
+    RoofKind.hip,
+    RoofKind.flat,
+  ],
+  HouseStyle.shop: [
+    RoofKind.mansard,
+    RoofKind.gable,
+    RoofKind.hip,
+    RoofKind.flat,
+  ],
+  HouseStyle.apartment: [RoofKind.flat, RoofKind.hip],
+};
+
+/// Pitched / mansard / flat roof over a rectangle at height [h].
+void _roof(
+  MeshBuilder b,
+  RoofKind kind,
+  double x0,
+  double z0,
+  double x1,
+  double z1,
+  double h,
+  int roof,
+  int wall, {
+  double overhang = 0.3,
+  double pitch = 2.6,
+}) {
+  b.mat = Mat.roof;
+  switch (kind) {
+    case RoofKind.gable:
+      b.gable(
+        x0,
+        z0,
+        x1,
+        z1,
+        h,
+        pitch,
+        roof,
+        gableColor: wall,
+        alongX: (x1 - x0) >= (z1 - z0),
+        overhang: overhang,
+      );
+    case RoofKind.hip:
+      b.hip(x0, z0, x1, z1, h, pitch * 0.8, roof, overhang: overhang);
+    case RoofKind.mansard:
+      b.frustum(
+        x0,
+        z0,
+        x1,
+        z1,
+        h,
+        h + 2.4,
+        math.min(1.0, (x1 - x0) * 0.2),
+        roof,
+        top: 0xFF5B5F68,
+      );
+    case RoofKind.flat:
+      b.box(x0, h, z0, x1, h + 0.12, z1, 0xFF8E8A85);
+      b.mat = Mat.plain;
+      b.box(x0 - 0.1, h, z0 - 0.1, x1 + 0.1, h + 0.55, z0 + 0.15, wall);
+      b.box(x0 - 0.1, h, z1 - 0.15, x1 + 0.1, h + 0.55, z1 + 0.1, wall);
+  }
+  b.mat = Mat.plain;
+}
+
 /// Places window decals on the four walls of a box.
 void windows(
   MeshBuilder b,
@@ -181,20 +278,26 @@ void _chimney(MeshBuilder b, double x, double z, double y0, double h, int c) {
 }
 
 /// Builds an ordinary building filling a [w] x [d] lot. Front faces +z.
-Mesh buildHouse(HouseStyle style, double w, double d, int seed) {
+Mesh buildHouse(
+  HouseStyle style,
+  double w,
+  double d,
+  int seed, [
+  HouseOptions o = HouseOptions.none,
+]) {
   final r = math.Random(seed);
   final b = MeshBuilder();
   switch (style) {
     case HouseStyle.cottage:
-      _cottage(b, w, d, r);
+      _cottage(b, w, d, r, o);
     case HouseStyle.townhouse:
-      _townhouse(b, w, d, r);
+      _townhouse(b, w, d, r, o);
     case HouseStyle.apartment:
-      _apartment(b, w, d, r);
+      _apartment(b, w, d, r, o);
     case HouseStyle.office:
-      _office(b, w, d, r);
+      _office(b, w, d, r, o);
     case HouseStyle.shop:
-      _townhouse(b, w, d, r, shop: true);
+      _townhouse(b, w, d, r, o, shop: true);
     case HouseStyle.supermarket:
       _supermarket(b, w, d, r);
     case HouseStyle.hospital:
@@ -214,12 +317,22 @@ Mesh buildHouse(HouseStyle style, double w, double d, int seed) {
   return b.build(lodPx: 16);
 }
 
-void _cottage(MeshBuilder b, double w, double d, math.Random r) {
+void _cottage(
+  MeshBuilder b,
+  double w,
+  double d,
+  math.Random r,
+  HouseOptions o,
+) {
   final hw = math.min(w, 9.0) / 2 - 0.8, hd = math.min(d, 9.0) / 2 - 1.2;
-  final floors = 1 + r.nextInt(2);
+  // Random rolls always happen so unedited houses stay identical (#8).
+  final rolledFloors = 1 + r.nextInt(2);
+  final floors = o.floors ?? rolledFloors;
   final h = floors * 2.9;
-  final facade = _pick(r, Pal.facades);
-  final roof = _pick(r, Pal.roofs);
+  final rolledFacade = _pick(r, Pal.facades);
+  final rolledRoof = _pick(r, Pal.roofs);
+  final facade = o.facade ?? rolledFacade;
+  final roof = o.roof ?? rolledRoof;
   final z0 = -hd + 0.6, z1 = hd + 0.2;
   _body(
     b,
@@ -242,25 +355,12 @@ void _cottage(MeshBuilder b, double w, double d, math.Random r) {
       b.mat = Mat.plain;
     },
   );
-  b.mat = Mat.roof;
-  if (r.nextBool()) {
-    b.gable(
-      -hw,
-      z0,
-      hw,
-      z1,
-      h,
-      2.4,
-      roof,
-      gableColor: facade,
-      alongX: true,
-      overhang: 0.45,
-    );
-  } else {
-    b.hip(-hw, z0, hw, z1, h, 2.2, roof, overhang: 0.45);
+  final rolledKind = r.nextBool() ? RoofKind.gable : RoofKind.hip;
+  final kind = o.roofKind ?? rolledKind;
+  _roof(b, kind, -hw, z0, hw, z1, h, roof, facade, overhang: 0.45, pitch: 2.4);
+  if (kind != RoofKind.flat) {
+    _chimney(b, hw * 0.5, 0, h + 0.4, 2.2, 0xFF9C5A45);
   }
-  b.mat = Mat.plain;
-  _chimney(b, hw * 0.5, 0, h + 0.4, 2.2, 0xFF9C5A45);
   // Porch.
   if (r.nextBool()) {
     b.box(-hw + 0.6, 0, z1, -hw + 2.4, 0.25, z1 + 1.2, Pal.stone);
@@ -271,15 +371,19 @@ void _townhouse(
   MeshBuilder b,
   double w,
   double d,
-  math.Random r, {
+  math.Random r,
+  HouseOptions o, {
   bool shop = false,
 }) {
   final hw = w / 2 - 0.15, hd = d / 2 - 0.3;
-  final floors = 3 + r.nextInt(3);
+  final rolledFloors = 3 + r.nextInt(3);
+  final floors = o.floors ?? rolledFloors;
   const fh = 3.1;
   final h = floors * fh;
-  final facade = _pick(r, Pal.facades);
-  final roof = _pick(r, Pal.roofs);
+  final rolledFacade = _pick(r, Pal.facades);
+  final rolledRoof = _pick(r, Pal.roofs);
+  final facade = o.facade ?? rolledFacade;
+  final roof = o.roof ?? rolledRoof;
   final frame = r.nextInt(3) == 0 ? null : Pal.frame;
   final spacing = 2.2 + r.nextDouble() * 0.5;
   final shopFront = shop || r.nextInt(3) == 0;
@@ -352,9 +456,13 @@ void _townhouse(
   );
   // Cornice.
   b.box(-hw - 0.2, h - 0.3, -hd - 0.2, hw + 0.2, h, hd + 0.2, 0xFFE9E3D6);
+  const kinds = [RoofKind.mansard, RoofKind.gable, RoofKind.hip];
+  final rolledKind = kinds[r.nextInt(3)];
+  final kind = o.roofKind ?? rolledKind;
   b.mat = Mat.roof;
-  final kind = r.nextInt(3);
-  if (kind == 0) {
+  if (kind == RoofKind.flat) {
+    _roof(b, kind, -hw, -hd, hw, hd, h, roof, facade);
+  } else if (kind == RoofKind.mansard) {
     // Mansard with dormers.
     b.frustum(-hw, -hd, hw, hd, h, h + 2.4, 1.0, roof, top: 0xFF5B5F68);
     b.mat = Mat.plain;
@@ -394,7 +502,7 @@ void _townhouse(
         overhang: 0.08,
       );
     }
-  } else if (kind == 1) {
+  } else if (kind == RoofKind.gable) {
     b.gable(
       -hw,
       -hd,
@@ -411,16 +519,26 @@ void _townhouse(
     b.hip(-hw, -hd, hw, hd, h, 2.2, roof, overhang: 0.2);
   }
   b.mat = Mat.plain;
-  if (r.nextBool()) _chimney(b, -hw * 0.5, -hd * 0.3, h + 0.6, 2.4, 0xFF9C5A45);
-  if (r.nextBool()) _chimney(b, hw * 0.6, -hd * 0.4, h + 0.6, 2.0, 0xFFB7AFA4);
+  final c1 = r.nextBool(), c2 = r.nextBool();
+  if (kind != RoofKind.flat) {
+    if (c1) _chimney(b, -hw * 0.5, -hd * 0.3, h + 0.6, 2.4, 0xFF9C5A45);
+    if (c2) _chimney(b, hw * 0.6, -hd * 0.4, h + 0.6, 2.0, 0xFFB7AFA4);
+  }
 }
 
-void _apartment(MeshBuilder b, double w, double d, math.Random r) {
+void _apartment(
+  MeshBuilder b,
+  double w,
+  double d,
+  math.Random r,
+  HouseOptions o,
+) {
   final hw = w / 2 - 0.5, hd = d / 2 - 0.5;
-  final floors = 5 + r.nextInt(4);
+  final rolledFloors = 5 + r.nextInt(4);
+  final floors = o.floors ?? rolledFloors;
   const fh = 3.0;
   final h = floors * fh;
-  final facade = _pick(r, const [
+  final rolledFacade = _pick(r, const [
     0xFFEDE6DA,
     0xFFE2D3BE,
     0xFFD8CFC4,
@@ -428,6 +546,7 @@ void _apartment(MeshBuilder b, double w, double d, math.Random r) {
     0xFFC9BBAA,
     0xFFE6C7A6,
   ]);
+  final facade = o.facade ?? rolledFacade;
   final cols = math.max(1, ((2 * hw - 0.6) / 5.2).floor());
   _body(
     b,
@@ -463,9 +582,24 @@ void _apartment(MeshBuilder b, double w, double d, math.Random r) {
       }
     },
   );
+  if (o.roofKind == RoofKind.hip) {
+    _roof(
+      b,
+      RoofKind.hip,
+      -hw,
+      -hd,
+      hw,
+      hd,
+      h,
+      o.roof ?? 0xFF5D6470,
+      facade,
+      pitch: 3.2,
+    );
+    return;
+  }
   // Parapet and roof plant.
   b.mat = Mat.roof;
-  b.box(-hw, h, -hd, hw, h + 0.15, hd, 0xFF8E8A85);
+  b.box(-hw, h, -hd, hw, h + 0.15, hd, o.roof ?? 0xFF8E8A85);
   b.mat = Mat.plain;
   b.box(-hw, h, -hd, hw, h + 0.6, -hd + 0.25, facade);
   b.box(-hw, h, hd - 0.25, hw, h + 0.6, hd, facade);
@@ -473,12 +607,14 @@ void _apartment(MeshBuilder b, double w, double d, math.Random r) {
   b.cylinder(hw * 0.5, 0, h, h + 2.2, 0.8, 6, 0xFF9AA3AD);
 }
 
-void _office(MeshBuilder b, double w, double d, math.Random r) {
+void _office(MeshBuilder b, double w, double d, math.Random r, HouseOptions o) {
   var hw = w / 2 - 0.8, hd = d / 2 - 0.8;
-  final tiers = 1 + r.nextInt(3);
+  final rolledTiers = 1 + r.nextInt(3);
+  // A chosen floor count builds one straight tower of that height.
+  final tiers = o.floors == null ? rolledTiers : 1;
   var y = 0.0;
   final glassy = r.nextBool();
-  final body = _pick(r, const [
+  final rolledBody = _pick(r, const [
     0xFFD9D4CB,
     0xFFB8C2CC,
     0xFF9EAAB6,
@@ -486,8 +622,10 @@ void _office(MeshBuilder b, double w, double d, math.Random r) {
     0xFF8C98A6,
     0xFFC7B9A6,
   ]);
+  final body = o.facade ?? rolledBody;
   for (var t = 0; t < tiers; t++) {
-    final floors = (t == 0 ? 5 : 2) + r.nextInt(t == 0 ? 6 : 3);
+    final rolled = (t == 0 ? 5 : 2) + r.nextInt(t == 0 ? 6 : 3);
+    final floors = o.floors ?? rolled;
     const fh = 3.2;
     final h = floors * fh;
     final thw = hw, thd = hd, ty = y;

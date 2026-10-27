@@ -2,12 +2,16 @@ import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
 
 import 'audio/audio_engine.dart';
 import 'debug_hook.dart';
 import 'ui/controls.dart';
+import 'ui/building_panel.dart';
 import 'ui/house_panel.dart';
+import 'ui/tile_panel.dart';
+import 'world/city.dart';
 import 'ui/settings_panel.dart';
 import 'ui/viewport.dart';
 import 'ui/wind_gauge.dart';
@@ -116,6 +120,19 @@ class _CityScreenState extends State<CityScreen>
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final compact = size.width < 640;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+            world.undo,
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): world.undo,
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            world.setMode(ToolMode.view),
+      },
+      child: Focus(autofocus: true, child: _scaffold(compact)),
+    );
+  }
+
+  Widget _scaffold(bool compact) {
     return Scaffold(
       backgroundColor: const Color(0xFF1E1914),
       body: Stack(
@@ -123,36 +140,35 @@ class _CityScreenState extends State<CityScreen>
           Positioned.fill(
             child: CityViewport(world: world, frame: frame),
           ),
-          // House / monument panel.
+          // House / building / tile panel.
           Positioned(
             left: 16,
             top: 16,
-            child: AnimatedBuilder(
-              animation: world,
-              builder: (context, _) {
-                final lot = world.selected;
-                return AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  transitionBuilder: (c, a) => FadeTransition(
-                    opacity: a,
-                    child: SlideTransition(
-                      position: Tween(
-                        begin: const Offset(-0.05, 0),
-                        end: Offset.zero,
-                      ).animate(a),
-                      child: c,
-                    ),
-                  ),
-                  child: lot == null
-                      ? (world.moveBlocks
-                            ? const _Hint(
-                                key: ValueKey('move'),
-                                text: 'Move blocks: tap a block, then tap another to swap them.',
-                              )
-                            : const SizedBox.shrink(key: ValueKey('none')))
-                      : HousePanel(key: ValueKey(lot), world: world, lot: lot),
-                );
-              },
+            bottom: 90,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SingleChildScrollView(
+                child: AnimatedBuilder(
+                  animation: world,
+                  builder: (context, _) {
+                    final lot = world.selected;
+                    return AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      transitionBuilder: (c, a) => FadeTransition(
+                        opacity: a,
+                        child: SlideTransition(
+                          position: Tween(
+                            begin: const Offset(-0.05, 0),
+                            end: Offset.zero,
+                          ).animate(a),
+                          child: c,
+                        ),
+                      ),
+                      child: _leftPanel(lot),
+                    );
+                  },
+                ),
+              ),
             ),
           ),
           // Settings.
@@ -203,9 +219,42 @@ class _CityScreenState extends State<CityScreen>
   }
 }
 
+/// Picks the panel on the left: building / house / tile tools or a hint.
+extension on _CityScreenState {
+  Widget _leftPanel(Lot? lot) {
+    final w = world;
+    if (lot != null) {
+      return w.buildMode
+          ? BuildingPanel(key: ValueKey(('b', lot)), world: w, lot: lot)
+          : HousePanel(key: ValueKey(('h', lot)), world: w, lot: lot);
+    }
+    final tile = w.selectedBlock;
+    if (w.buildMode && tile != null) {
+      return TilePanel(key: ValueKey(('t', tile)), world: w, block: tile);
+    }
+    if (w.buildMode) {
+      return const _Hint(
+        key: ValueKey('build'),
+        icon: Icons.construction,
+        text:
+            'Build: click a tile to change it, or a building to edit it. '
+            'Ctrl+Z undoes, Esc leaves.',
+      );
+    }
+    if (w.moveBlocks) {
+      return const _Hint(
+        key: ValueKey('move'),
+        text: 'Move blocks: tap a block, then tap another to swap them.',
+      );
+    }
+    return const SizedBox.shrink(key: ValueKey('none'));
+  }
+}
+
 class _Hint extends StatelessWidget {
   final String text;
-  const _Hint({super.key, required this.text});
+  final IconData icon;
+  const _Hint({super.key, required this.text, this.icon = Icons.open_with});
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +263,7 @@ class _Hint extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          const Icon(Icons.open_with, size: 16, color: UI.accent),
+          Icon(icon, size: 16, color: UI.accent),
           const SizedBox(width: 8),
           Expanded(child: Text(text, style: UI.label)),
         ],

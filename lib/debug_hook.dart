@@ -3,6 +3,8 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'engine/lighting.dart';
+import 'world/buildings.dart';
+import 'world/city.dart';
 import 'world/monuments.dart';
 import 'world/world.dart';
 
@@ -82,6 +84,39 @@ void installDebugHook(World w) {
           ..tx = l.cx
           ..tz = l.cz
           ..dist = 90;
+      case 'mode':
+        w.setMode(ToolMode.values.byName(v as String));
+      case 'tile':
+        // [i, j, kindName] (#7)
+        w.setTileKind(
+          w.city.blockAtCell(v[0] as int, v[1] as int),
+          BlockKind.values.byName(v[2] as String),
+        );
+      case 'selectTile':
+        w.selectTile(w.city.blockAtCell(v[0] as int, v[1] as int));
+      case 'selectLot':
+        // [blockIndex, lotIndex]
+        w.selectLot(w.city.blocks[v[0] as int].lots[v[1] as int]);
+      case 'edit':
+        // [blockIndex, lotIndex, {floors, facade, roof, roofKind, style,
+        //  rotSteps, demolished}] (#8)
+        final l = w.city.blocks[v[0] as int].lots[v[1] as int];
+        final m = v[2] as Map<String, dynamic>;
+        w.editLot(l, (e) {
+          if (m['floors'] != null) e.floors = m['floors'] as int;
+          if (m['facade'] != null) e.facade = m['facade'] as int;
+          if (m['roof'] != null) e.roof = m['roof'] as int;
+          if (m['roofKind'] != null) {
+            e.roofKind = RoofKind.values.byName(m['roofKind'] as String);
+          }
+          if (m['style'] != null) {
+            e.style = HouseStyle.values.byName(m['style'] as String);
+          }
+          if (m['rotSteps'] != null) e.rotSteps = m['rotSteps'] as int;
+          if (m['demolished'] != null) e.demolished = m['demolished'] as bool;
+        });
+      case 'undo':
+        w.undo();
       case 'smooth':
         w.smoothEdges = v as bool;
         w.autoSmooth = false;

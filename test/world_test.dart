@@ -1,8 +1,10 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:low_poly_tile_city/engine/lighting.dart';
 import 'package:low_poly_tile_city/engine/scene.dart';
+import 'package:low_poly_tile_city/world/buildings.dart';
 import 'package:low_poly_tile_city/world/city.dart';
 import 'package:low_poly_tile_city/world/monuments.dart';
 import 'package:low_poly_tile_city/world/world.dart';
@@ -287,4 +289,81 @@ void main() {
       expect(low, lessThan(high));
     },
   );
+
+  test('tile tools: change kind, variant, clear, undo, reset (#7)', () {
+    final w = World()..finishConstruction();
+    w.resize(6, 5);
+    final empty = w.city.blockAtCell(5, 0);
+    expect(empty.content.kind, BlockKind.empty);
+    w.setTileKind(empty, BlockKind.park);
+    _run(w, 4);
+    final park = w.city.blockAtCell(5, 0);
+    expect(park.content.kind, BlockKind.park);
+    expect(park.trees, isNotEmpty);
+    expect(w.building, isFalse);
+    // Variant keeps the kind but changes the seed.
+    final seed = park.content.seed;
+    w.tileVariant(park);
+    expect(w.city.blockAtCell(5, 0).content.seed, isNot(seed));
+    w.clearTile(w.city.blockAtCell(5, 0));
+    expect(w.city.blockAtCell(5, 0).lots, isEmpty);
+    // Undo three times: back to empty land.
+    w.undo();
+    w.undo();
+    expect(w.city.blockAtCell(5, 0).content.kind, BlockKind.park);
+    expect(w.city.blockAtCell(5, 0).content.seed, seed);
+    w.undo();
+    expect(w.city.blockAtCell(5, 0).content.kind, BlockKind.empty);
+    // Reset blocks restores the generated kind of an edited original tile.
+    final first = w.city.blockAtCell(0, 0);
+    final kind0 = first.content.kind;
+    w.setTileKind(first, BlockKind.empty);
+    expect(w.city.blockAtCell(0, 0).content.kind, BlockKind.empty);
+    w.resetBlocks();
+    expect(w.city.blockAtCell(0, 0).content.kind, kind0);
+  });
+
+  test('building tools: floors, colour, roof, rotate, demolish (#8)', () {
+    final w = World()..finishConstruction();
+    final lot = w.city.blocks
+        .expand((b) => b.lots)
+        .firstWhere((l) => l.style == HouseStyle.townhouse);
+    final tris0 = lot.objects.first.mesh.triCount;
+    w.editLot(lot, (e) => e.floors = 3);
+    final h3 = lot.objects.first.mesh.maxY;
+    w.editLot(lot, (e) => e.floors = 5);
+    final h5 = lot.objects.first.mesh.maxY;
+    expect(h5 - h3, closeTo(2 * 3.1, 0.01));
+    w.editLot(lot, (e) => e.facade = 0xFF123456);
+    expect(lot.objects.first.mesh.col.contains(0xFF123456.toSigned(32)), isTrue);
+    w.editLot(lot, (e) => e.roofKind = RoofKind.flat);
+    expect(lot.edits!.roofKind, RoofKind.flat);
+    final rot = lot.objects.first.rot;
+    w.editLot(lot, (e) => e.rotSteps += lot.square ? 1 : 2);
+    expect(
+      lot.objects.first.rot,
+      closeTo(rot + (lot.square ? 1 : 2) * math.pi / 2, 1e-9),
+    );
+    w.editLot(lot, (e) => e.demolished = true);
+    expect(lot.objects, isEmpty);
+    expect(lot.name, 'Empty lot');
+    // Undo everything back to the generated house.
+    for (var i = 0; i < 6; i++) {
+      w.undo();
+    }
+    final again = w.city.blocks
+        .expand((b) => b.lots)
+        .firstWhere(
+          (l) =>
+              l.index == lot.index &&
+              l.block.i == lot.block.i &&
+              l.block.j == lot.block.j,
+        );
+    expect(again.edits, isNull);
+    expect(again.objects.first.mesh.triCount, tris0);
+    // Reset houses clears edits.
+    w.editLot(again, (e) => e.floors = 6);
+    w.resetHouses();
+    expect(w.city.blocks.every((b) => b.content.lots.isEmpty), isTrue);
+  });
 }

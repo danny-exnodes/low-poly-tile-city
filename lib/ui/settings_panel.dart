@@ -158,6 +158,12 @@ class _SettingsPanelState extends State<SettingsPanel> {
       ),
       PanelButton(icon: Icons.crop_free, label: 'Whole map', onTap: w.wholeMap),
       PanelButton(
+        icon: Icons.construction,
+        label: 'Build',
+        active: w.buildMode,
+        onTap: w.toggleBuild,
+      ),
+      PanelButton(
         icon: Icons.open_with,
         label: 'Move blocks',
         active: w.moveBlocks,

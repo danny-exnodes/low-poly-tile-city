@@ -26,6 +26,18 @@ class _Job {
 
 enum _JobKind { parts, grow, demolish }
 
+/// What a click on the town does.
+enum ToolMode { view, move, build }
+
+/// Undo entry: the layout order plus a copy of every block's content.
+class _Snapshot {
+  final List<BlockContent> refs;
+  final List<BlockContent> copies;
+  _Snapshot(List<BlockContent> layout)
+    : refs = List.of(layout),
+      copies = [for (final c in layout) c.copy()];
+}
+
 class _CamAnim {
   final double tx0, tz0, d0, p0, y0, tx1, tz1, d1, p1, y1;
   double t = 0;
@@ -87,7 +99,16 @@ class World extends ChangeNotifier {
     }
   }
 
-  bool moveBlocks = false;
+  ToolMode mode = ToolMode.view;
+  bool get moveBlocks => mode == ToolMode.move;
+  bool get buildMode => mode == ToolMode.build;
+
+  /// Tile picked in build mode (#7).
+  Block? selectedBlock;
+  Block? _hoverBlock;
+  final _undo = <_Snapshot>[];
+  static const _undoLimit = 50;
+  bool get canUndo => _undo.isNotEmpty;
   bool sound = false;
   bool music = false;
 
@@ -151,6 +172,9 @@ class World extends ChangeNotifier {
     city.treeDensity = treeDensity;
     selected = null;
     moveFrom = null;
+    selectedBlock = null;
+    _hoverBlock = null;
+    scene.outline = null;
     _finishJobs();
     city.build(scene);
     traffic.amount = trafficAmount;
@@ -175,6 +199,7 @@ class World extends ChangeNotifier {
   void resize(int nx, int nz) {
     if (nx == city.nx && nz == city.nz) return;
     final ox = city.nx, oz = city.nz;
+    _undo.clear(); // snapshots cover one map size only
     city.resize(nx, nz);
     scene.particles.clear();
     _rebuild();
@@ -197,6 +222,7 @@ class World extends ChangeNotifier {
   }
 
   void resetBlocks() {
+    _pushUndo();
     city.resetBlocks();
     _rebuild();
     _queueAll();
@@ -207,8 +233,9 @@ class World extends ChangeNotifier {
   void resetHouses() {
     final touched = [
       for (final b in city.blocks)
-        if (b.content.monuments.isNotEmpty) b,
+        if (b.content.lots.isNotEmpty) b,
     ];
+    if (touched.isNotEmpty) _pushUndo();
     city.resetHouses();
     _rebuildAnimated(touched);
     buildEvents++;
@@ -227,11 +254,99 @@ class World extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleMoveBlocks() {
-    moveBlocks = !moveBlocks;
+  void toggleMoveBlocks() =>
+      setMode(moveBlocks ? ToolMode.view : ToolMode.move);
+
+  void toggleBuild() => setMode(buildMode ? ToolMode.view : ToolMode.build);
+
+  void setMode(ToolMode m) {
+    mode = m;
     _setMoveFrom(null);
-    if (moveBlocks) _select(null);
+    selectedBlock = null;
+    _hoverBlock = null;
+    _select(null);
+    _updateOutline();
     notifyListeners();
+  }
+
+  /// Pointer moved over the town (outlines the tile under it in tool modes).
+  void hover(double x, double y) {
+    if (mode == ToolMode.view) return;
+    final hit = renderer.cam.groundHit(x, y, 0.3);
+    final b = hit == null ? null : city.blockAt(hit.$1, hit.$2);
+    if (!identical(b, _hoverBlock)) {
+      _hoverBlock = b;
+      _updateOutline();
+    }
+  }
+
+  void _updateOutline() {
+    final b = moveFrom ?? selectedBlock ?? _hoverBlock;
+    scene.outline = b == null
+        ? null
+        : [b.x0, b.z0, b.x0 + City.block, b.z0 + City.block, 0.32];
+  }
+
+  // ---------------------------------------------------------------------
+  // Editing tools (#7, #8) with undo.
+
+  void _pushUndo() {
+    _undo.add(_Snapshot(city.layout));
+    if (_undo.length > _undoLimit) _undo.removeAt(0);
+  }
+
+  void undo() {
+    if (_undo.isEmpty) return;
+    final s = _undo.removeLast();
+    if (s.refs.length != city.layout.length) return;
+    final changed = <Block>[];
+    for (var k = 0; k < s.refs.length; k++) {
+      final cur = city.layout[k];
+      if (!identical(cur, s.refs[k]) || !cur.sameAs(s.copies[k])) {
+        changed.add(city.blocks[k]);
+      }
+    }
+    city.layout = List.of(s.refs);
+    for (var k = 0; k < s.refs.length; k++) {
+      s.refs[k].assign(s.copies[k]);
+    }
+    _select(null);
+    _rebuildAnimated(changed);
+    _reselectBlock();
+    notifyListeners();
+  }
+
+  void _reselectBlock() {
+    final b = selectedBlock;
+    if (b != null) selectedBlock = city.blockAtCell(b.i, b.j);
+    _updateOutline();
+  }
+
+  /// Turns a tile into another kind of block (#7).
+  void setTileKind(Block b, BlockKind kind) {
+    _pushUndo();
+    final c = b.content;
+    c.kind = kind;
+    c.seed = math.Random().nextInt(1 << 30);
+    c.lots.clear();
+    _rebuildAnimated([b]);
+    _reselectBlock();
+    buildEvents++;
+    notifyListeners();
+  }
+
+  /// Same kind of block, new random layout and colours (#7).
+  void tileVariant(Block b) => setTileKind(b, b.content.kind);
+
+  void clearTile(Block b) => setTileKind(b, BlockKind.empty);
+
+  /// Applies [change] to a lot's edits and rebuilds just that lot (#8).
+  void editLot(Lot l, void Function(LotOverride e) change) {
+    _pushUndo();
+    final c = l.block.content;
+    change(c.edit(l.index));
+    if (c.lots[l.index]!.isDefault) c.lots.remove(l.index);
+    _rebuildLot(l);
   }
 
   void wholeMap() {
@@ -312,7 +427,54 @@ class World extends ChangeNotifier {
     }
     final o = renderer.pick(x, y);
     final owner = o?.owner;
+    if (buildMode) {
+      if (owner is Lot) {
+        selectedBlock = null;
+        _select(owner);
+      } else {
+        // Ground or decoration: pick the tile (empty lots included).
+        final hit = renderer.cam.groundHit(x, y, 0.3);
+        final b = hit == null ? null : city.blockAt(hit.$1, hit.$2);
+        final lot = b == null ? null : _lotAt(b, hit!.$1, hit.$2);
+        _select(lot != null && lot.demolished ? lot : null);
+        selectedBlock = lot != null && lot.demolished ? null : b;
+      }
+      _updateOutline();
+      notifyListeners();
+      return;
+    }
     _select(owner is Lot ? owner : null);
+    notifyListeners();
+  }
+
+  /// The lot of [b] whose footprint contains (x, z), if any.
+  Lot? _lotAt(Block b, double x, double z) {
+    for (final l in b.lots) {
+      final c = math.cos(l.baseRot).abs(), s = math.sin(l.baseRot).abs();
+      final hx = (c * l.w + s * l.d) / 2, hz = (s * l.w + c * l.d) / 2;
+      if ((x - l.cx).abs() < hx && (z - l.cz).abs() < hz) return l;
+    }
+    return null;
+  }
+
+  /// Selects a lot as if it was clicked (QA hook, panels).
+  void selectLot(Lot l) {
+    selectedBlock = null;
+    _select(l);
+    _updateOutline();
+    notifyListeners();
+  }
+
+  void selectTile(Block b) {
+    _select(null);
+    selectedBlock = b;
+    _updateOutline();
+    notifyListeners();
+  }
+
+  void deselectTile() {
+    selectedBlock = null;
+    _updateOutline();
     notifyListeners();
   }
 
@@ -341,9 +503,7 @@ class World extends ChangeNotifier {
       _liftBase.clear();
     }
     moveFrom = b;
-    scene.outline = b == null
-        ? null
-        : [b.x0, b.z0, b.x0 + City.block, b.z0 + City.block, 0.32];
+    _updateOutline();
     if (b != null) {
       for (final o in _blockObjects(b)) {
         _liftBase[o] = o.y;
@@ -360,6 +520,7 @@ class World extends ChangeNotifier {
   void _swap(Block a, Block b) {
     _setMoveFrom(null);
     _select(null);
+    _pushUndo();
     city.swap(a, b);
     // Only the two blocks are rebuilt (#4), and they are built up again (#6).
     _rebuildAnimated([a, b]);
@@ -379,12 +540,26 @@ class World extends ChangeNotifier {
     }
   }
 
-  void setMonument(Lot l, Monument? m) {
+  /// Replaces a house with a monument, or brings the house back (null).
+  void setMonument(Lot l, Monument? m) => editLot(l, (e) {
+    e.monument = m;
     if (m == null) {
-      l.block.content.monuments.remove(l.index);
+      // "Original": the generated house, no other edits either.
+      e
+        ..style = null
+        ..floors = null
+        ..facade = null
+        ..roof = null
+        ..roofKind = null
+        ..rotSteps = 0
+        ..seed = null
+        ..demolished = false;
     } else {
-      l.block.content.monuments[l.index] = m;
+      e.demolished = false;
     }
+  });
+
+  void _rebuildLot(Lot l) {
     for (final o in l.objects) {
       o.highlight = 0;
     }
