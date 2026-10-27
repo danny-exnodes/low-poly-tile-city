@@ -27,6 +27,8 @@ const { chromium } = require('playwright');
     }, driver);
     console.log(`${label.padEnd(10)} ${name.padEnd(22)} fps ${r.fps.toFixed(2).padStart(5)}  p50 ${r.p50.toFixed(0).padStart(4)} ms  p95 ${r.p95.toFixed(0).padStart(4)} ms  dart render ${r.cpu.toFixed(1).padStart(5)} ms  tris ${r.tris}`);
   };
+  // PRE='[{"op":"smooth","v":false}]' applies commands before measuring.
+  for (const o of JSON.parse(process.env.PRE || '[]')) await cmd(o);
   await cmd({ op: 'tilt', v: true });
   await measure('still, tilt-shift');
   await measure('orbiting, tilt-shift', "c({op:'orbit', v:[4,0]})");
