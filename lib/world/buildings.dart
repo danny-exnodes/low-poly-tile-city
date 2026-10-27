@@ -148,7 +148,8 @@ Mesh buildHouse(HouseStyle style, double w, double d, int seed) {
     case HouseStyle.stands:
       _stands(b, w, d, r);
   }
-  return b.build();
+  // Frames and small decals drop out when the house is tiny on screen.
+  return b.build(lodPx: 16);
 }
 
 void _cottage(MeshBuilder b, double w, double d, math.Random r) {

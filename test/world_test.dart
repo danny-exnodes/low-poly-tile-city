@@ -139,4 +139,56 @@ void main() {
     expect(kinds, containsAll([BlockKind.plaza, BlockKind.park]));
     expect(kinds.length, greaterThan(8));
   });
+
+  test('growing the map adds only empty land (#3)', () {
+    final w = World();
+    final houses = w.city.houseCount;
+    final kinds = [for (final b in w.city.blocks) b.content.kind];
+    w.resize(6, 5);
+    expect(w.city.blocks.length, 30);
+    final added = w.city.blocks.where((b) => b.i == 5).toList();
+    expect(added.map((b) => b.content.kind).toSet(), {BlockKind.empty});
+    expect(added.every((b) => b.lots.isEmpty), isTrue);
+    expect(w.city.houseCount, houses);
+    // Old blocks untouched.
+    for (var j = 0; j < 5; j++) {
+      for (var i = 0; i < 5; i++) {
+        expect(w.city.blockAtCell(i, j).content.kind, kinds[j * 5 + i]);
+      }
+    }
+    // Shrinking keeps what was cut and gives it back when growing again.
+    final lastRow = [for (var i = 0; i < 6; i++) w.city.blockAtCell(i, 4)];
+    w.resize(6, 4);
+    expect(w.city.blocks.length, 24);
+    w.resize(6, 5);
+    for (var i = 0; i < 6; i++) {
+      expect(w.city.blockAtCell(i, 4).content, same(lastRow[i].content));
+    }
+    expect(w.city.houseCount, houses);
+    // Reset blocks keeps the new land empty.
+    w.resetBlocks();
+    expect(
+      w.city.blocks.where((b) => b.i == 5).map((b) => b.content.kind).toSet(),
+      {BlockKind.empty},
+    );
+  });
+
+  test('swapping blocks rebuilds only those two (#4)', () {
+    final w = World();
+    final a = w.city.blocks[0], b = w.city.blocks[7];
+    final ka = a.content.kind, kb = b.content.kind;
+    final untouched = w.city.blocks[3];
+    final keep = List.of(untouched.objects);
+    w.swapBlocks(a, b);
+    expect(w.city.blockAtCell(0, 0).content.kind, kb);
+    expect(w.city.blockAtCell(2, 1).content.kind, ka);
+    expect(identical(w.city.blocks[3], untouched), isTrue);
+    for (final o in keep) {
+      expect(w.scene.objects.contains(o), isTrue);
+    }
+    // No object of a replaced block is left behind.
+    for (final o in a.objects) {
+      expect(w.scene.objects.contains(o), isFalse);
+    }
+  });
 }
