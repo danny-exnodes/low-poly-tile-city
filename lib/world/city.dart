@@ -24,21 +24,113 @@ enum BlockKind {
   church,
 }
 
+/// User edits of one lot (#8). Unset fields fall back to what the block's
+/// seed generates.
+class LotOverride {
+  HouseStyle? style;
+  int? floors;
+  int? facade;
+  int? roof;
+  RoofKind? roofKind;
+  int rotSteps = 0;
+  int? seed;
+  bool demolished = false;
+  Monument? monument;
+
+  LotOverride copy() => LotOverride()
+    ..style = style
+    ..floors = floors
+    ..facade = facade
+    ..roof = roof
+    ..roofKind = roofKind
+    ..rotSteps = rotSteps
+    ..seed = seed
+    ..demolished = demolished
+    ..monument = monument;
+
+  bool get isDefault =>
+      style == null &&
+      floors == null &&
+      facade == null &&
+      roof == null &&
+      roofKind == null &&
+      rotSteps == 0 &&
+      seed == null &&
+      !demolished &&
+      monument == null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LotOverride &&
+      other.style == style &&
+      other.floors == floors &&
+      other.facade == facade &&
+      other.roof == roof &&
+      other.roofKind == roofKind &&
+      other.rotSteps == rotSteps &&
+      other.seed == seed &&
+      other.demolished == demolished &&
+      other.monument == monument;
+
+  @override
+  int get hashCode => Object.hash(
+    style,
+    floors,
+    facade,
+    roof,
+    roofKind,
+    rotSteps,
+    seed,
+    demolished,
+    monument,
+  );
+}
+
 /// What lives on a block. Swapped around by "Move blocks".
 class BlockContent {
   BlockKind kind;
   int seed;
-  final Map<int, Monument> monuments = {};
+
+  /// Per-lot edits and monuments, by lot index (#8).
+  final Map<int, LotOverride> lots = {};
   BlockContent(this.kind, this.seed);
-  BlockContent copy() => BlockContent(kind, seed)..monuments.addAll(monuments);
+
+  BlockContent copy() =>
+      BlockContent(kind, seed)
+        ..lots.addAll({for (final e in lots.entries) e.key: e.value.copy()});
+
+  /// Copies [other]'s state into this object (undo restores in place).
+  void assign(BlockContent other) {
+    kind = other.kind;
+    seed = other.seed;
+    lots
+      ..clear()
+      ..addAll({for (final e in other.lots.entries) e.key: e.value.copy()});
+  }
+
+  bool sameAs(BlockContent o) {
+    if (o.kind != kind || o.seed != seed || o.lots.length != lots.length) {
+      return false;
+    }
+    for (final e in lots.entries) {
+      if (o.lots[e.key] != e.value) return false;
+    }
+    return true;
+  }
+
+  LotOverride edit(int lot) => lots.putIfAbsent(lot, LotOverride.new);
 }
 
 class Lot {
   final Block block;
   final int index;
-  final double cx, cz, w, d, rot;
-  final HouseStyle style;
-  final int seed;
+  final double cx, cz, w, d;
+
+  /// Generated orientation, style and seed; see the getters for the values
+  /// after user edits.
+  final double baseRot;
+  final HouseStyle baseStyle;
+  final int baseSeed;
   final objects = <SceneObject>[];
   Lot(
     this.block,
@@ -47,13 +139,23 @@ class Lot {
     this.cz,
     this.w,
     this.d,
-    this.rot,
-    this.style,
-    this.seed,
+    this.baseRot,
+    this.baseStyle,
+    this.baseSeed,
   );
 
-  Monument? get monument => block.content.monuments[index];
-  String get name => monument?.label ?? style.label;
+  LotOverride? get edits => block.content.lots[index];
+  Monument? get monument => edits?.monument;
+  HouseStyle get style => edits?.style ?? baseStyle;
+  int get seed => edits?.seed ?? baseSeed;
+  double get rot => baseRot + (edits?.rotSteps ?? 0) * math.pi / 2;
+  bool get demolished => edits?.demolished ?? false;
+
+  /// Square lots can turn by quarter turns; others only by half turns.
+  bool get square => (w - d).abs() < 0.5;
+
+  String get name =>
+      demolished ? 'Empty lot' : (monument?.label ?? style.label);
 }
 
 class Block {
@@ -128,9 +230,15 @@ class City {
 
   int _nextKey = 1;
 
+  /// Kind and seed every block content started with (Reset blocks, #7).
+  final _origin = Expando<(BlockKind, int)>();
+
   City(this.nx, this.nz, this.seed) {
     layout = _generateLayout(nx, nz, seed);
     original = List.of(layout);
+    for (final c in layout) {
+      _origin[c] = (c.kind, c.seed);
+    }
   }
 
   double get width => nx * pitch + road;
@@ -209,6 +317,7 @@ class City {
           keepOrig.add(orig);
         } else {
           final empty = BlockContent(BlockKind.empty, seed ^ (i * 7919 + j));
+          _origin[empty] = (empty.kind, empty.seed);
           keep.add(empty);
           keepOrig.add(empty);
         }
@@ -220,12 +329,25 @@ class City {
     original = keepOrig;
   }
 
-  /// Puts every block back where it started (monuments travel along).
-  void resetBlocks() => layout = List.of(original);
+  /// Puts every block back where it started, as the kind it started as.
+  /// Edits stay with blocks that kept their kind (#7).
+  void resetBlocks() {
+    layout = List.of(original);
+    for (final c in layout) {
+      final o = _origin[c];
+      if (o == null) continue;
+      if (c.kind != o.$1 || c.seed != o.$2) {
+        c.kind = o.$1;
+        c.seed = o.$2;
+        c.lots.clear();
+      }
+    }
+  }
 
+  /// Drops every building edit and monument (#8).
   void resetHouses() {
     for (final c in layout) {
-      c.monuments.clear();
+      c.lots.clear();
     }
   }
 
@@ -969,8 +1091,22 @@ class City {
     b.spinners.removeWhere((s) => l.objects.contains(s.obj));
     l.objects.clear();
     final mon = l.monument;
-    if (mon == null) {
-      final m = buildHouse(l.style, l.w, l.d, l.seed);
+    if (l.demolished) {
+      // Empty lot (#8): nothing to build.
+    } else if (mon == null) {
+      final e = l.edits;
+      final m = buildHouse(
+        l.style,
+        l.w,
+        l.d,
+        l.seed,
+        HouseOptions(
+          floors: e?.floors,
+          facade: e?.facade,
+          roof: e?.roof,
+          roofKind: e?.roofKind,
+        ),
+      );
       l.objects.add(
         _add(scene, m, l.cx, 0.3, l.cz, rot: l.rot, owner: l, block: b),
       );

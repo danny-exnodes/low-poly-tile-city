@@ -2,7 +2,7 @@
 
 Ứng dụng Flutter web: một thị trấn low-poly sinh thủ tục trên bàn cờ ô vuông, renderer tự viết (painter's algorithm trên `Canvas.drawVertices`). Bản chạy: https://danny-exnodes.github.io/low-poly-tile-city/
 
-- **Checkpoint mới nhất:** [`docs/releases/v0.0.3.md`](docs/releases/v0.0.2.md) — đọc trước khi làm gì.
+- **Checkpoint mới nhất:** [`docs/releases/v0.0.4.md`](docs/releases/v0.0.2.md) — đọc trước khi làm gì.
 - **Quy trình nhóm agent:** bộ skill trong `.claude/skills/` — bắt đầu từ `tile-city-workflow` (PO → TechLead → Developer ⇄ QA → Release → Steward).
 - **Lộ trình:** issue Roadmap #1; chỉ code issue có label `status: ready`.
 - **Kiểm tra trước push:** `.claude/skills/developer/scripts/check.sh` (analyze + test + benchmark + build).

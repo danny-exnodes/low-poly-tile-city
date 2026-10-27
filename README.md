@@ -24,8 +24,14 @@ Một thị trấn low-poly ấm áp, sinh thủ tục trên bàn cờ ô vuông
 | Di chuyển | kéo chuột phải, shift + kéo, hoặc kéo hai ngón |
 | Phóng to/thu nhỏ | lăn chuột / chụm hai ngón |
 | Chọn nhà | click vào nhà |
+| Chế độ xây | nút **Build**, click ô hoặc công trình; Ctrl/⌘+Z hoàn tác; Esc thoát |
 
 ## Phiên bản
+
+**Mới trong v0.0.4**
+- Chế độ **Build**: click một ô để đổi thành 13 loại (đất trống, nhà vườn, nhà phố, trung tâm, chung cư, công viên, quảng trường, hội chợ, nông trại, siêu thị, bệnh viện, sân bóng, nhà thờ), tạo biến thể hoặc dọn sạch (#7).
+- Click một công trình để đổi kiểu, số tầng, màu tường, màu mái, kiểu mái, xoay, phá dỡ hoặc đặt tượng đài (#8).
+- **Undo** (Ctrl/⌘+Z) cho mọi thao tác chỉnh sửa; Reset blocks trả lại cả loại ô gốc.
 
 **Mới trong v0.0.3**
 - Phong cách low-poly mềm: ánh sáng dịu (hết cháy sáng giữa trưa), chân tường và mặt dưới tán cây tối dần, cạnh tường bo tròn, tán cây tròn, tượng đài nhiều cạnh hơn, khử răng cưa trên màn hình thường (tự tắt nếu máy chậm; nút **Smooth edges**) (#5).
@@ -36,7 +42,7 @@ Một thị trấn low-poly ấm áp, sinh thủ tục trên bàn cờ ô vuông
 - Giảm lag: bóng đổ khi kéo Light 34 → ~2 ms, tilt-shift tốn GPU ×3,1 → ×1,15, đổi chỗ 2 khối 40–52 → ~3 ms, ít hơn 40% tam giác phải vẽ (LOD cây, cành cây chỉ vẽ mùa đông); benchmark chạy trong CI (#4).
 - Quy trình nhóm agent (`.claude/skills/`), `CLAUDE.md`, checkpoint phát hành (#2).
 
-Các bản: [v0.0.3](docs/releases/v0.0.3.md) · [v0.0.2](docs/releases/v0.0.2.md) · [v0.0.1](docs/releases/v0.0.1.md) — lộ trình ở issue #1.
+Các bản: [v0.0.4](docs/releases/v0.0.4.md) · [v0.0.3](docs/releases/v0.0.3.md) · [v0.0.2](docs/releases/v0.0.2.md) · [v0.0.1](docs/releases/v0.0.1.md) — lộ trình ở issue #1.
 
 ## Chạy và build
 

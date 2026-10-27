@@ -99,14 +99,20 @@ class _CityViewportState extends State<CityViewport> {
         }
         w.orbit(-e.panDelta.dx * 0.6, -e.panDelta.dy * 0.6);
       },
-      child: MouseRegion(
-        cursor: w.moveBlocks
-            ? SystemMouseCursors.move
-            : SystemMouseCursors.basic,
-        child: SizedBox.expand(
-          child: CustomPaint(
-            painter: _ScenePainter(w, widget.frame),
-            isComplex: true,
+      child: AnimatedBuilder(
+        animation: w,
+        builder: (context, _) => MouseRegion(
+          onHover: (e) => w.hover(e.localPosition.dx, e.localPosition.dy),
+          cursor: w.moveBlocks
+              ? SystemMouseCursors.move
+              : w.buildMode
+              ? SystemMouseCursors.precise
+              : SystemMouseCursors.basic,
+          child: SizedBox.expand(
+            child: CustomPaint(
+              painter: _ScenePainter(w, widget.frame),
+              isComplex: true,
+            ),
           ),
         ),
       ),
