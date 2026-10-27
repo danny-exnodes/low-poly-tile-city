@@ -31,8 +31,45 @@
 
   <title>Low-Poly Tile City</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Loading screen shown before Flutter's first frame (#10). */
+    html, body { margin: 0; height: 100%; background: #e8dcc8; }
+    #loader {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 40%, #f4e6cf 0%, #e3d2b6 60%, #cdb796 100%);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #5b4636;
+      transition: opacity .5s ease;
+    }
+    #loader.done { opacity: 0; pointer-events: none; }
+    #loader .tile { width: 92px; height: 92px; position: relative; animation: hop 1.4s ease-in-out infinite; }
+    #loader .top { position: absolute; left: 6px; top: 0; width: 80px; height: 80px;
+      background: linear-gradient(135deg, #8cc45a, #6fa845);
+      transform: rotateX(60deg) rotateZ(45deg); border-radius: 6px; box-shadow: inset 0 0 0 6px #d5cfc4; }
+    #loader .house { position: absolute; left: 34px; top: 8px; width: 22px; height: 26px; background: #e58f72; border-radius: 3px;
+      box-shadow: 10px 6px 0 -2px #f2e6d0; }
+    #loader .house::before { content: ""; position: absolute; left: -4px; top: -10px;
+      border-left: 15px solid transparent; border-right: 15px solid transparent; border-bottom: 11px solid #4a4e5a; }
+    #loader .shadow { margin-top: 6px; width: 70px; height: 10px; border-radius: 50%; background: rgba(60,40,20,.18);
+      animation: shade 1.4s ease-in-out infinite; }
+    #loader h1 { margin: 22px 0 4px; font-size: 18px; font-weight: 600; letter-spacing: .02em; }
+    #loader p { margin: 0; font-size: 12px; opacity: .7; }
+    #loader .bar { margin-top: 14px; width: 140px; height: 3px; border-radius: 2px; background: rgba(91,70,54,.18); overflow: hidden; }
+    #loader .bar::after { content: ""; display: block; width: 40%; height: 100%; background: #e9894a; border-radius: 2px;
+      animation: slide 1.2s ease-in-out infinite; }
+    @keyframes hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @keyframes shade { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.8); opacity: .6; } }
+    @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(260%); } }
+  </style>
 </head>
 <body>
+  <div id="loader" aria-label="Loading">
+    <div class="tile"><div class="top"></div><div class="house"></div></div>
+    <div class="shadow"></div>
+    <h1>Low-Poly Tile City</h1>
+    <p>laying out the streets…</p>
+    <div class="bar"></div>
+  </div>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
