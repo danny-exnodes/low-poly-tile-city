@@ -1,80 +1,61 @@
 # Low-Poly Tile City
 
-A cozy, procedural low-poly town that runs in the browser, built with Flutter (web).
+Một thị trấn low-poly ấm áp, sinh thủ tục trên bàn cờ ô vuông, chạy ngay trong trình duyệt. Viết bằng Flutter (web).
+
+**Chơi thử:** https://danny-exnodes.github.io/low-poly-tile-city/
 
 ![screenshot](docs/screenshot.png)
 
-## Features
+## Tính năng
 
-- **Procedural city** on a tiled board: townhouses, cottages, apartment blocks, office
-  towers, parks with ponds, a central plaza with a fountain, a fairground with a spinning
-  Ferris wheel, carousel and circus tent, a farm with a windmill, a supermarket with
-  parking, a hospital with a helipad, a sports field and a church.
-- **Living streets**: cars follow lanes and turn at intersections, and people walk the
-  sidewalks.
-- **Atmosphere**: time-of-day light (dawn → golden hour → night, with lit windows and
-  street-lamp glow), four seasons (spring blossoms, summer green, autumn colours, winter
-  snow with bare trees), and real-time ground shadows.
-- **Wind**: speed slider plus a draggable compass. Trees sway and leaves (or petals or
-  snow) blow, fall and settle. **Gust** and **Leaf devil** (a whirlwind that crosses town
-  and lifts fallen leaves) add bursts.
-- **Monuments**: click any house and replace it with Tokyo Tower, Christ the Redeemer,
-  Petronas Towers, Sagrada Familia, St Basil's Cathedral, Atomium, Gateway Arch,
-  Stonehenge, a Dutch windmill or the Moai, with a build-up animation. **Original**
-  restores the house.
-- **Town tools**: width/depth of the map, traffic & people density, street-tree density,
-  leaf amount/size, **Switch trees** (mixed / round / pine / chunky / poplar),
-  **Move blocks** (tap two blocks to swap them), **Reset blocks**, **Reset houses**,
-  **Whole map**, and **Tilt-shift** depth-of-field.
-- **Sound & music**: procedural Web Audio ambience (wind, rustling leaves, birds,
-  crickets at night, distant traffic, construction hammering) and a generative ambient
-  soundtrack.
+- **Thành phố sinh thủ tục:** nhà phố, nhà vườn, chung cư, văn phòng, công viên có hồ, quảng trường đài phun nước, hội chợ (vòng quay, đu quay, lều xiếc), nông trại cối xay gió, siêu thị có bãi đỗ xe, bệnh viện có bãi trực thăng, sân bóng, nhà thờ.
+- **Phố xá sống động:** xe chạy theo làn và rẽ ở ngã tư; người đi dạo trên vỉa hè.
+- **Khí quyển:** ánh sáng theo giờ (bình minh → golden hour → đêm, đèn cửa sổ và đèn đường), bốn mùa (hoa xuân, lá hè, lá thu, tuyết đông với cây trụi lá), bóng đổ theo mặt trời.
+- **Gió:** thanh tốc độ và la bàn kéo được; cây lắc, lá (hoặc cánh hoa, tuyết) bay, rơi và đọng lại. **Gust** tạo cơn gió mạnh; **Leaf devil** tạo lốc xoáy đi ngang thị trấn cuốn lá lên.
+- **Tượng đài:** click một ngôi nhà để thay bằng Tokyo Tower, Christ the Redeemer, Petronas Towers, Sagrada Familia, St Basil's Cathedral, Atomium, Gateway Arch, Stonehenge, cối xay gió Hà Lan hoặc tượng Moai. **Original** trả lại ngôi nhà cũ.
+- **Công cụ thị trấn:** rộng/sâu của bản đồ (ô mới là đất trống), mật độ xe và người, cây đường phố, lượng lá và cỡ lá, **Switch trees**, **Move blocks** (chạm hai khối để đổi chỗ), **Reset blocks**, **Reset houses**, **Whole map**, **Tilt-shift**.
+- **Âm thanh và nhạc:** âm thanh môi trường tạo bằng Web Audio (gió, lá xào xạc, chim, dế ban đêm, xe cộ, tiếng gõ khi xây) và nhạc nền sinh tự động.
 
-## Controls
+## Điều khiển
 
-| Action | Input |
+| Thao tác | Cách làm |
 | --- | --- |
-| Orbit | drag |
-| Pan | right-drag, shift-drag, or two-finger drag |
-| Zoom | scroll wheel / pinch |
-| Select a house | click it |
+| Xoay | kéo chuột |
+| Di chuyển | kéo chuột phải, shift + kéo, hoặc kéo hai ngón |
+| Phóng to/thu nhỏ | lăn chuột / chụm hai ngón |
+| Chọn nhà | click vào nhà |
 
-## Running
+## Phiên bản
 
-```bash
-flutter run -d chrome          # development
-flutter build web --release    # production build in build/web
-```
+**Mới trong v0.0.2**
+- Mở rộng bản đồ chỉ thêm ô đất trống; ô bị cắt khi thu nhỏ được trả lại khi mở rộng (#3).
+- Giảm lag: bóng đổ khi kéo Light 34 → ~2 ms, tilt-shift tốn GPU ×3,1 → ×1,15, đổi chỗ 2 khối 40–52 → ~3 ms, ít hơn 40% tam giác phải vẽ (LOD cây, cành cây chỉ vẽ mùa đông); benchmark chạy trong CI (#4).
+- Quy trình nhóm agent (`.claude/skills/`), `CLAUDE.md`, checkpoint phát hành (#2).
 
-Only the web platform is set up for now.
+Các bản: [v0.0.2](docs/releases/v0.0.2.md) · [v0.0.1](docs/releases/v0.0.1.md) — lộ trình ở issue #1.
 
-## Deployment (GitHub Pages)
-
-`.github/workflows/deploy-pages.yml` runs `flutter analyze`, `flutter test` and a
-release web build on every push and pull request. On pushes to `main`/`master` (or a
-manual run) it publishes `build/web` to GitHub Pages at
-`https://<owner>.github.io/<repo>/`. The base href is set from the repo name.
-
-One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-
-## How it works
-
-There is no 3D engine dependency. `lib/engine` contains a small software renderer:
-meshes are built from low-poly primitives (`mesh.dart`), lit per triangle with a
-sun/sky hemisphere model that also handles seasons, snow and night emissives
-(`lighting.dart`), and drawn with the painter's algorithm (objects depth-sorted, parts of
-complex monuments sorted, back faces culled), all batched into a few
-`Canvas.drawVertices` calls (`renderer.dart`). Static ground geometry and shadows are
-cached in a `Picture` while the camera is still. Tilt-shift is a masked blur of the
-frame.
-
-`lib/world` holds the procedural city (`city.dart`, `buildings.dart`,
-`monuments.dart`, `props.dart`), the simulation of traffic, wind and particles
-(`simulation.dart`) and the shared state (`world.dart`). `lib/ui` holds the Flutter
-panels, and `lib/audio` holds the Web Audio engine.
+## Chạy và build
 
 ```bash
-flutter test   # simulation and rendering smoke tests
+flutter run -d chrome          # phát triển
+flutter build web --release    # bản production trong build/web
+flutter test                   # test mô phỏng + benchmark hiệu năng
 ```
 
-Fonts: Inter and JetBrains Mono (SIL Open Font License).
+Hiện chỉ cấu hình nền tảng web.
+
+## Cách hoạt động
+
+Không dùng engine 3D ngoài. `lib/engine` là một renderer phần mềm nhỏ: mesh dựng từ các khối low-poly (`mesh.dart`), tô sáng từng tam giác theo mô hình nắng + bầu trời có xử lý mùa, tuyết và đèn ban đêm (`lighting.dart`), rồi vẽ theo painter's algorithm (sắp object theo độ sâu, loại mặt sau, LOD khi ở xa) gộp vào vài lệnh `Canvas.drawVertices` (`renderer.dart`). Nền và bóng được cache thành `Picture` khi camera đứng yên; tilt-shift làm mờ một bản thu nhỏ của khung hình.
+
+`lib/world` chứa thành phố sinh thủ tục (`city.dart`, `buildings.dart`, `monuments.dart`, `props.dart`), mô phỏng giao thông, gió và hạt (`simulation.dart`) và trạng thái chung (`world.dart`). `lib/ui` là các panel Flutter, `lib/audio` là engine Web Audio.
+
+## Triển khai (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` chạy `flutter analyze`, `flutter test` (gồm benchmark) và build web cho mọi push và pull request. Push vào `master` sẽ deploy lên GitHub Pages và, nếu `version:` trong `pubspec.yaml` chưa có release, tự tạo tag `v<version>` cùng GitHub Release kèm bản web nén zip.
+
+## Đóng góp
+
+Dự án dùng quy trình nhóm agent: xem `CLAUDE.md` và `.claude/skills/`.
+
+Font: Inter và JetBrains Mono (SIL Open Font License).
