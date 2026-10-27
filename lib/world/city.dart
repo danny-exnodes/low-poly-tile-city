@@ -207,6 +207,10 @@ class City {
 
   int nx, nz;
   final int seed;
+
+  /// Size the layout was generated at; larger maps were grown with empty
+  /// land, so (seed, base size) reproduces every untouched tile (#9).
+  final int baseNx, baseNz;
   TreeStyle treeStyle = TreeStyle.mixed;
   double treeDensity = 1;
 
@@ -233,7 +237,7 @@ class City {
   /// Kind and seed every block content started with (Reset blocks, #7).
   final _origin = Expando<(BlockKind, int)>();
 
-  City(this.nx, this.nz, this.seed) {
+  City(this.nx, this.nz, this.seed) : baseNx = nx, baseNz = nz {
     layout = _generateLayout(nx, nz, seed);
     original = List.of(layout);
     for (final c in layout) {
@@ -316,7 +320,7 @@ class City {
           keep.add(cur);
           keepOrig.add(orig);
         } else {
-          final empty = BlockContent(BlockKind.empty, seed ^ (i * 7919 + j));
+          final empty = BlockContent(BlockKind.empty, emptySeed(i, j));
           _origin[empty] = (empty.kind, empty.seed);
           keep.add(empty);
           keepOrig.add(empty);
@@ -328,6 +332,23 @@ class City {
     layout = keep;
     original = keepOrig;
   }
+
+  int emptySeed(int i, int j) => seed ^ (i * 7919 + j);
+
+  /// What the tile at (i, j) holds before any edit (#9).
+  (BlockKind, int) defaultContent(int i, int j) {
+    if (i < baseNx && j < baseNz) {
+      final c = (_generated ??= _generateLayout(
+        baseNx,
+        baseNz,
+        seed,
+      ))[j * baseNx + i];
+      return (c.kind, c.seed);
+    }
+    return (BlockKind.empty, emptySeed(i, j));
+  }
+
+  List<BlockContent>? _generated;
 
   /// Puts every block back where it started, as the kind it started as.
   /// Edits stay with blocks that kept their kind (#7).

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -7,6 +8,7 @@ import 'package:low_poly_tile_city/engine/scene.dart';
 import 'package:low_poly_tile_city/world/buildings.dart';
 import 'package:low_poly_tile_city/world/city.dart';
 import 'package:low_poly_tile_city/world/monuments.dart';
+import 'package:low_poly_tile_city/world/save.dart';
 import 'package:low_poly_tile_city/world/world.dart';
 
 void _run(World w, double seconds) {
@@ -335,7 +337,10 @@ void main() {
     final h5 = lot.objects.first.mesh.maxY;
     expect(h5 - h3, closeTo(2 * 3.1, 0.01));
     w.editLot(lot, (e) => e.facade = 0xFF123456);
-    expect(lot.objects.first.mesh.col.contains(0xFF123456.toSigned(32)), isTrue);
+    expect(
+      lot.objects.first.mesh.col.contains(0xFF123456.toSigned(32)),
+      isTrue,
+    );
     w.editLot(lot, (e) => e.roofKind = RoofKind.flat);
     expect(lot.edits!.roofKind, RoofKind.flat);
     final rot = lot.objects.first.rot;
@@ -365,5 +370,70 @@ void main() {
     w.editLot(again, (e) => e.floors = 6);
     w.resetHouses();
     expect(w.city.blocks.every((b) => b.content.lots.isEmpty), isTrue);
+  });
+
+  test('town state round-trips and share links stay short (#9)', () {
+    final w = World()..finishConstruction();
+    w.resize(10, 10);
+    w.hour = 9.5;
+    w.season = Season.spring;
+    w.wind.base = 7.5;
+    // 30 lot edits spread over the map, a monument, a swap, a tile change.
+    final lots = w.city.blocks.expand((b) => b.lots).toList();
+    for (var k = 0; k < 30; k++) {
+      final l = lots[(k * 7) % lots.length];
+      w.editLot(l, (e) {
+        e.floors = 2 + k % 3;
+        e.facade = 0xFF000000 | (k * 0x10203);
+        if (k.isEven) e.roofKind = RoofKind.hip;
+      });
+    }
+    w.setMonument(lots[3], Monument.atomium);
+    w.swapBlocks(w.city.blockAtCell(0, 0), w.city.blockAtCell(1, 0));
+    w.setTileKind(w.city.blockAtCell(9, 9), BlockKind.park);
+    _run(w, 0.5);
+    final before = TownState.capture(w);
+    final code = TownState.encode(w);
+    expect(code.length, lessThan(2000), reason: 'share link payload');
+
+    final other = World()..finishConstruction();
+    expect(TownState.apply(other, TownState.decode(code)!), isTrue);
+    other.finishConstruction();
+    expect(jsonEncode(TownState.capture(other)), jsonEncode(before));
+    expect(other.city.nx, 10);
+    expect(other.season, Season.spring);
+    expect(other.city.houseCount, w.city.houseCount);
+    expect(
+      other.city.blocks
+          .expand((b) => b.lots)
+          .where((l) => l.monument == Monument.atomium)
+          .length,
+      1,
+    );
+    // Garbage and other versions are ignored.
+    expect(TownState.decode('not-a-town'), isNull);
+    expect(TownState.apply(other, {'v': 99}), isFalse);
+    // New town: different seed, back to 5x5.
+    final seed = other.city.seed;
+    other.newTown();
+    expect(other.city.seed, isNot(seed));
+    expect(other.city.blocks.length, 25);
+  });
+
+  test('press and hold picks the tile in build mode (#11)', () {
+    final w = World()..finishConstruction();
+    _render(w);
+    final cam = w.renderer.cam;
+    final b = w.city.blocks[12];
+    // Project the tile centre to the screen.
+    final dx = b.cx - cam.ex, dy = 0.3 - cam.ey, dz = b.cz - cam.ez;
+    final z = dx * cam.fx + dy * cam.fy + dz * cam.fz;
+    final sx =
+        cam.cx + (dx * cam.rx + dy * cam.ry + dz * cam.rz) * cam.focal / z;
+    final sy =
+        cam.cy - (dx * cam.ux + dy * cam.uy + dz * cam.uz) * cam.focal / z;
+    w.longPress(sx, sy);
+    expect(w.buildMode, isTrue);
+    expect(identical(w.selectedBlock, b), isTrue);
   });
 }

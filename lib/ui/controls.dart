@@ -278,7 +278,8 @@ class _PanelButtonState extends State<PanelButton> {
           duration: const Duration(milliseconds: 90),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
-            height: 34,
+            // Finger-sized on phones (#11).
+            height: MediaQuery.sizeOf(context).width < 640 ? 40 : 34,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: bg,
@@ -340,7 +341,7 @@ class SegmentedChips extends StatelessWidget {
                 onTap: () => onSelected(i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
-                  height: 26,
+                  height: MediaQuery.sizeOf(context).width < 640 ? 36 : 26,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: i == selected ? UI.buttonOn : UI.button,

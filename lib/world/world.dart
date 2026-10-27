@@ -182,6 +182,44 @@ class World extends ChangeNotifier {
     _lightDirty = true;
   }
 
+  /// Replaces the whole town (saved state, share link, New town; #9).
+  void loadCity(
+    City c, {
+    double? hour,
+    Season? season,
+    double? windBase,
+    double? windFrom,
+    double? traffic,
+    double? trees,
+    double? leaves,
+    double? leafSize,
+    bool? tiltShift,
+  }) {
+    city = c;
+    if (hour != null) _hour = hour;
+    if (season != null) _season = season;
+    if (windBase != null) wind.base = windBase;
+    if (windFrom != null) wind.fromDeg = windFrom;
+    if (traffic != null) trafficAmount = traffic;
+    if (trees != null) treeDensity = trees;
+    if (leaves != null) weather.leaves = leaves;
+    if (leafSize != null) weather.leafSize = leafSize;
+    if (tiltShift != null) this.tiltShift = tiltShift;
+    _undo.clear();
+    scene.particles.clear();
+    _rebuild();
+    _queueAll(intro: true);
+    _lightDirty = true;
+    notifyListeners();
+  }
+
+  /// A freshly generated 5×5 town; settings are kept.
+  void newTown() {
+    final c = City(5, 5, math.Random().nextInt(1 << 30))
+      ..treeStyle = city.treeStyle;
+    loadCity(c);
+  }
+
   void setTraffic(double v) {
     trafficAmount = v;
     traffic.amount = v;
@@ -470,6 +508,15 @@ class World extends ChangeNotifier {
     selectedBlock = b;
     _updateOutline();
     notifyListeners();
+  }
+
+  /// Press-and-hold on touch screens: Build mode with that tile picked.
+  void longPress(double x, double y) {
+    final hit = renderer.cam.groundHit(x, y, 0.3);
+    final b = hit == null ? null : city.blockAt(hit.$1, hit.$2);
+    if (b == null) return;
+    if (!buildMode) setMode(ToolMode.build);
+    selectTile(b);
   }
 
   void deselectTile() {

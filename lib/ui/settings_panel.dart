@@ -8,14 +8,23 @@ import 'controls.dart';
 class SettingsPanel extends StatefulWidget {
   final World world;
   final ValueNotifier<String> stats;
-  const SettingsPanel({super.key, required this.world, required this.stats});
+  final VoidCallback? onShare;
+  final bool compact;
+  const SettingsPanel({
+    super.key,
+    required this.world,
+    required this.stats,
+    this.onShare,
+    this.compact = false,
+  });
 
   @override
   State<SettingsPanel> createState() => _SettingsPanelState();
 }
 
 class _SettingsPanelState extends State<SettingsPanel> {
-  bool _open = true;
+  late bool _open = !widget.compact;
+  Object? _lastSel;
   int? _nx, _nz;
   double? _trees;
 
@@ -42,8 +51,15 @@ class _SettingsPanelState extends State<SettingsPanel> {
     return AnimatedBuilder(
       animation: w,
       builder: (context, _) {
+        // On phones a tool panel opening at the top collapses the sheet so
+        // the two never cover each other (#11).
+        final sel = w.selected ?? w.selectedBlock;
+        if (widget.compact && sel != null && !identical(sel, _lastSel)) {
+          _open = false;
+        }
+        _lastSel = sel;
         return GlassPanel(
-          width: 264,
+          width: widget.compact ? null : 264,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -157,6 +173,16 @@ class _SettingsPanelState extends State<SettingsPanel> {
         onTap: w.switchTrees,
       ),
       PanelButton(icon: Icons.crop_free, label: 'Whole map', onTap: w.wholeMap),
+      PanelButton(
+        icon: Icons.ios_share,
+        label: 'Share',
+        onTap: () => widget.onShare?.call(),
+      ),
+      PanelButton(
+        icon: Icons.auto_awesome,
+        label: 'New town',
+        onTap: w.newTown,
+      ),
       PanelButton(
         icon: Icons.construction,
         label: 'Build',
