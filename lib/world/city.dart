@@ -9,6 +9,7 @@ import 'monuments.dart';
 import 'props.dart';
 
 enum BlockKind {
+  empty,
   residential,
   townhouses,
   downtown,
@@ -60,7 +61,13 @@ class Block {
   BlockContent content;
   final double x0, z0;
   final lots = <Lot>[];
-  final props = <SceneObject>[];
+
+  /// Everything built for this block, so it can be rebuilt alone (#4).
+  final objects = <SceneObject>[];
+  final trees = <TreeInfo>[];
+  final spinners = <Spinner>[];
+  final lamps = <double>[];
+  SceneObject? ground;
   Block(this.i, this.j, this.content, this.x0, this.z0);
   double get cx => x0 + City.block / 2;
   double get cz => z0 + City.block / 2;
@@ -107,7 +114,13 @@ class City {
   final blocks = <Block>[];
   final trees = <TreeInfo>[];
   final spinners = <Spinner>[];
-  final lampPositions = <double>[];
+
+  /// Blocks cut off by shrinking the map, restored when it grows back (#3).
+  /// Value: (current content, original content).
+  final _stash = <(int, int), (BlockContent, BlockContent)>{};
+
+  /// Block currently being built; objects created meanwhile belong to it.
+  Block? _cur;
 
   // Leaf landing height map (1 m cells).
   late Float32List heights;
@@ -174,9 +187,16 @@ class City {
     ];
   }
 
-  /// Changes the map size, keeping existing blocks where possible.
+  /// Changes the map size. Existing blocks stay put; new cells are empty
+  /// land, or whatever was there before the map was shrunk (#3).
   void resize(int newNx, int newNz) {
-    final fresh = _generateLayout(newNx, newNz, seed);
+    for (var j = 0; j < nz; j++) {
+      for (var i = 0; i < nx; i++) {
+        if (i >= newNx || j >= newNz) {
+          _stash[(i, j)] = (layout[j * nx + i], original[j * nx + i]);
+        }
+      }
+    }
     final keep = <BlockContent>[];
     final keepOrig = <BlockContent>[];
     for (var j = 0; j < newNz; j++) {
@@ -184,9 +204,13 @@ class City {
         if (i < nx && j < nz) {
           keep.add(layout[j * nx + i]);
           keepOrig.add(original[j * nx + i]);
+        } else if (_stash.remove((i, j)) case (final cur, final orig)) {
+          keep.add(cur);
+          keepOrig.add(orig);
         } else {
-          keep.add(fresh[j * newNx + i]);
-          keepOrig.add(fresh[j * newNx + i]);
+          final empty = BlockContent(BlockKind.empty, seed ^ (i * 7919 + j));
+          keep.add(empty);
+          keepOrig.add(empty);
         }
       }
     }
@@ -219,30 +243,67 @@ class City {
     scene.objects.clear();
     scene.movers.clear();
     blocks.clear();
-    trees.clear();
-    spinners.clear();
-    lampPositions.clear();
     _nextKey = 1;
     _treeMeshes.clear();
 
     final g = MeshBuilder();
     _buildBoard(g);
+    _board = SceneObject(g.build(), key: 0);
 
     for (var j = 0; j < nz; j++) {
       for (var i = 0; i < nx; i++) {
         final b = Block(i, j, layout[j * nx + i], blockX(i), blockZ(j));
         blocks.add(b);
-        _buildBlock(b, g, scene);
+        _buildWholeBlock(b, scene);
       }
     }
-    _buildStreetFurniture(scene);
-
-    final gm = g.build();
-    scene.ground = gm;
-    scene.groundObject = SceneObject(gm, key: 0);
-    scene.lamps = Float32List.fromList(lampPositions);
     scene.boardHalfW = width / 2;
     scene.boardHalfD = depth / 2;
+    _finish(scene);
+  }
+
+  SceneObject? _board;
+
+  void _buildWholeBlock(Block b, Scene scene) {
+    _cur = b;
+    final g = MeshBuilder();
+    _buildBlock(b, g, scene);
+    _buildStreetFurniture(b, scene);
+    b.ground = SceneObject(g.build(), key: 0);
+    _cur = null;
+  }
+
+  /// Rebuilds only the given blocks from the current layout (#4).
+  void rebuildBlocks(Iterable<Block> which, Scene scene) {
+    final gone = <SceneObject>{};
+    for (final old in which) {
+      gone.addAll(old.objects);
+      final k = blocks.indexOf(old);
+      if (k < 0) continue;
+      final b = Block(old.i, old.j, layout[old.j * nx + old.i], old.x0, old.z0);
+      blocks[k] = b;
+      _buildWholeBlock(b, scene);
+    }
+    scene.objects.removeWhere(gone.contains);
+    _finish(scene);
+  }
+
+  Block blockAtCell(int i, int j) => blocks[j * nx + i];
+
+  /// Refreshes aggregated lists, ground, height map and shadows.
+  void _finish(Scene scene) {
+    trees
+      ..clear()
+      ..addAll(blocks.expand((b) => b.trees));
+    spinners
+      ..clear()
+      ..addAll(blocks.expand((b) => b.spinners));
+    scene.lamps = Float32List.fromList([for (final b in blocks) ...b.lamps]);
+    scene.groundObjects
+      ..clear()
+      ..add(_board!)
+      ..addAll(blocks.map((b) => b.ground!));
+    scene.groundVersion++;
     _buildHeights(scene);
     updateShadows(scene);
   }
@@ -257,6 +318,7 @@ class City {
     double tint = 0.5,
     Object? owner,
     bool shadow = true,
+    Block? block,
   }) {
     final o = SceneObject(
       m,
@@ -271,6 +333,7 @@ class City {
     );
     _nextKey++;
     scene.objects.add(o);
+    (block ?? _cur)?.objects.add(o);
     return o;
   }
 
@@ -432,6 +495,9 @@ class City {
         _tree(scene, x, z, r, species: species);
 
     switch (b.content.kind) {
+      case BlockKind.empty:
+        // Vacant land waiting to be built on (#3).
+        _grass(g, i0x, i0z, i1x, i1z, y, r, tile: 5);
       case BlockKind.residential:
         _grass(g, i0x, i0z, i1x, i1z, y, r);
         final c = inner / 3;
@@ -564,7 +630,7 @@ class City {
           capTop: false,
         );
         g.mat = Mat.plain;
-        _add(scene, buildFountain(3), b.cx, y, b.cz, owner: b);
+        _add(scene, _fountainS, b.cx, y, b.cz, owner: b);
         for (final (bx, bz, rot) in [
           (b.cx - 6, b.cz + 2.4, 0.0),
           (b.cx + 6, b.cz - 2.4, math.pi),
@@ -604,7 +670,7 @@ class City {
           0xFFC4B69C,
           capTop: false,
         );
-        _add(scene, buildFountain(3.6), b.cx, y, b.cz, owner: b);
+        _add(scene, _fountainL, b.cx, y, b.cz, owner: b);
         for (var k = 0; k < 12; k++) {
           final a = k * math.pi / 6;
           tree(b.cx + math.cos(a) * 11.5, b.cz + math.sin(a) * 11.5);
@@ -621,7 +687,7 @@ class City {
         lot(b.cx + 3, b.cz - 12, 6, 6, 0, HouseStyle.kiosk);
         final wheel = _add(
           scene,
-          _ferrisWheel(),
+          _wheelMesh,
           b.cx - 7,
           y + 12.5,
           b.cz - 6,
@@ -631,17 +697,24 @@ class City {
         wheel.dynamicLight = true;
         _add(
           scene,
-          _ferrisBase(),
+          _wheelBaseMesh,
           b.cx - 7,
           y,
           b.cz - 6,
           rot: math.pi / 2 + 0.3,
           owner: b,
         );
-        spinners.add(Spinner(wheel, 0.18));
-        final car = _add(scene, _carousel(), b.cx - 8, y, b.cz + 10, owner: b);
+        b.spinners.add(Spinner(wheel, 0.18));
+        final car = _add(
+          scene,
+          _carouselMesh,
+          b.cx - 8,
+          y,
+          b.cz + 10,
+          owner: b,
+        );
         car.dynamicLight = true;
-        spinners.add(Spinner(car, 0.6));
+        b.spinners.add(Spinner(car, 0.6));
         for (var k = 0; k < 4; k++) {
           tree(i0x + 3, i0z + 4 + k * 8.5);
         }
@@ -662,7 +735,7 @@ class City {
         g.mat = Mat.plain;
         _grass(g, i1x - 14, i0z, i1x, i1z, y, r);
         lot(i1x - 7, i1z - 9, 14, 18, math.pi / 2, HouseStyle.barn);
-        final mill = buildMonument(Monument.windmill);
+        final mill = _mill;
         final mx = i0x + 9.0, mz = i0z + 9.0;
         _add(scene, mill.main, mx, y, mz, rot: 0.4, owner: b)
           ..sx = 0.8
@@ -682,7 +755,7 @@ class City {
               ..sy = 0.8
               ..sz = 0.8
               ..dynamicLight = true;
-        spinners.add(Spinner(sails, 0.25, windDriven: true));
+        b.spinners.add(Spinner(sails, 0.25, windDriven: true));
         for (var k = 0; k < 3; k++) {
           tree(i1x - 3, i0z + 3 + k * 4, species: 1);
         }
@@ -761,7 +834,7 @@ class City {
           final gz = (fz0 + fz1) / 2;
           _add(
             scene,
-            _goal(),
+            _goalMesh,
             gx,
             y,
             gz,
@@ -782,6 +855,14 @@ class City {
   }
 
   static final _bench = buildBench();
+  // Prop meshes shared by every block that uses them.
+  static final _fountainS = buildFountain(3);
+  static final _fountainL = buildFountain(3.6);
+  static final _wheelMesh = _ferrisWheel();
+  static final _wheelBaseMesh = _ferrisBase();
+  static final _carouselMesh = _carousel();
+  static final _goalMesh = _goal();
+  static final _mill = buildMonument(Monument.windmill);
   static final _lamp = buildLamp();
   final _carMeshes = <int, Mesh>{};
   Mesh _carMesh(int kind, int color) => _carMeshes.putIfAbsent(
@@ -827,7 +908,7 @@ class City {
     );
     o.sx = o.sy = o.sz = s;
     final crownY = 0.3 + (mesh.maxY * 0.7) * s;
-    trees.add(
+    _cur!.trees.add(
       TreeInfo(
         o,
         crownY,
@@ -839,9 +920,10 @@ class City {
     );
   }
 
-  void _buildStreetFurniture(Scene scene) {
-    final r = math.Random(seed * 3 + 1);
-    for (final b in blocks) {
+  void _buildStreetFurniture(Block b, Scene scene) {
+    // Own random stream per block so rebuilding one block is deterministic.
+    final r = math.Random(b.content.seed ^ 0x5bd1e995);
+    {
       final x0 = b.x0, z0 = b.z0, x1 = x0 + block, z1 = z0 + block;
       // Lamps at corners.
       for (final (lx, lz, rot) in [
@@ -853,15 +935,19 @@ class City {
         _add(scene, _lamp, lx, 0.3, lz, rot: rot - math.pi / 2, shadow: false);
         // Lamp head: local (0.9, 4.05, 0) rotated.
         final rr = rot - math.pi / 2;
-        lampPositions
+        b.lamps
           ..add(lx + math.cos(rr) * 0.9)
           ..add(4.0)
           ..add(lz - math.sin(rr) * 0.9);
       }
       // Street trees along the four sides.
       final kind = b.content.kind;
-      if (kind == BlockKind.plaza || kind == BlockKind.farm) continue;
-      if (treeDensity <= 0.01) continue;
+      if (kind == BlockKind.plaza ||
+          kind == BlockKind.farm ||
+          kind == BlockKind.empty) {
+        return;
+      }
+      if (treeDensity <= 0.01) return;
       final spacing = 6.5 / treeDensity;
       for (var u = 6.0; u <= block - 6.0 + 1e-6; u += spacing) {
         if (r.nextInt(6) == 0) continue;
@@ -874,20 +960,34 @@ class City {
   }
 
   /// Creates the objects for a lot (house or monument).
-  void buildLot(Lot l, Scene scene, {bool animate = false}) {
+  void buildLot(Lot l, Scene scene) {
+    final b = l.block;
     for (final o in l.objects) {
       scene.objects.remove(o);
+      b.objects.remove(o);
     }
+    b.spinners.removeWhere((s) => l.objects.contains(s.obj));
     l.objects.clear();
     final mon = l.monument;
     if (mon == null) {
       final m = buildHouse(l.style, l.w, l.d, l.seed);
-      l.objects.add(_add(scene, m, l.cx, 0.3, l.cz, rot: l.rot, owner: l));
+      l.objects.add(
+        _add(scene, m, l.cx, 0.3, l.cz, rot: l.rot, owner: l, block: b),
+      );
     } else {
       final model = buildMonument(mon);
       final s = (math.min(l.w, l.d) / 12).clamp(0.9, 1.4);
       final main =
-          _add(scene, model.main, l.cx, 0.3, l.cz, rot: l.rot, owner: l)
+          _add(
+              scene,
+              model.main,
+              l.cx,
+              0.3,
+              l.cz,
+              rot: l.rot,
+              owner: l,
+              block: b,
+            )
             ..sx = s
             ..sy = s
             ..sz = s;
@@ -903,18 +1003,24 @@ class City {
                 l.cz + (-math.sin(l.rot) * p.x + math.cos(l.rot) * p.z) * s,
                 rot: l.rot,
                 owner: l,
+                block: b,
               )
               ..sx = s
               ..sy = s
               ..sz = s
               ..dynamicLight = true;
         l.objects.add(sp);
-        spinners.add(Spinner(sp, 0.25, windDriven: true));
+        b.spinners.add(Spinner(sp, 0.25, windDriven: true));
       }
+    }
+    if (_cur == null) {
+      spinners
+        ..clear()
+        ..addAll(blocks.expand((b) => b.spinners));
     }
   }
 
-  Mesh _ferrisWheel() {
+  static Mesh _ferrisWheel() {
     final b = MeshBuilder(sortParts: true);
     const steel = 0xFFE9E4DA;
     const r = 11.0;
@@ -959,7 +1065,7 @@ class City {
     return b.build();
   }
 
-  Mesh _ferrisBase() {
+  static Mesh _ferrisBase() {
     final b = MeshBuilder();
     for (final z in const [-1.6, 1.6]) {
       b.beam(V3(-5, 0, z), V3(0, 12.5, z * 0.7), 0.5, 0xFFB9B4AD);
@@ -969,7 +1075,7 @@ class City {
     return b.build();
   }
 
-  Mesh _carousel() {
+  static Mesh _carousel() {
     final b = MeshBuilder();
     b.lathe(0, 0, [0, 0.6], [4.5, 4.5], 12, 0xFFE9E3D6, capTop: true);
     b.cylinder(0, 0, 0.6, 4, 0.4, 6, 0xFFD4AF37);
@@ -1002,7 +1108,7 @@ class City {
     return b.build();
   }
 
-  Mesh _goal() {
+  static Mesh _goal() {
     final b = MeshBuilder();
     b.box(-0.1, 0, -3.6, 0.1, 2.4, -3.4, 0xFFF4F1EA);
     b.box(-0.1, 0, 3.4, 0.1, 2.4, 3.6, 0xFFF4F1EA);
@@ -1022,80 +1128,91 @@ class City {
     }
     final ly = math.max(light.sy, 0.18);
     final px = -light.sx / ly, pz = -light.sz / ly;
-    final out = <double>[];
-    final pts = Float64List(16);
+    final winter = light.season == Season.winter;
+    final out = _ShadowOut();
     for (final o in scene.objects) {
       if (!o.castShadow || !o.visible || o.mesh.maxY < 0.4) continue;
-      final m = o.mesh;
+      final cache = _shadowPts[o.mesh] ??= _ShadowPts(o.mesh);
       final cr = math.cos(o.rot), sr = math.sin(o.rot);
       final gy = o.y + 0.02;
-      for (var p = 0; p < m.partCount; p++) {
-        final bx = m.partBox;
-        final k = p * 6;
-        final y1 = bx[k + 4];
-        if (y1 * o.sy < 0.3) continue;
-        // Bare deciduous crowns cast no shadow in winter.
-        if (light.season == Season.winter &&
-            m.partStart[p] < m.partStart[p + 1] &&
-            m.mat[m.partStart[p]] == Mat.foliage) {
-          continue;
+      final groups = winter ? cache.winter : cache.all;
+      for (final pts in groups) {
+        if (pts.length ~/ 3 > _hx.length) {
+          _hx = Float64List(pts.length);
+          _hz = Float64List(pts.length);
+          _idx = Int32List(pts.length);
+          _hull = Int32List(pts.length * 2);
         }
         var n = 0;
-        for (final xx in [bx[k], bx[k + 3]]) {
-          for (final yy in [bx[k + 1], bx[k + 4]]) {
-            for (final zz in [bx[k + 2], bx[k + 5]]) {
-              final lx = xx * o.sx, lz = zz * o.sz;
-              final wx = o.x + cr * lx + sr * lz;
-              final wz = o.z - sr * lx + cr * lz;
-              final h = math.max(0.0, o.y + yy * o.sy - gy);
-              pts[n++] = wx + px * h;
-              pts[n++] = wz + pz * h;
-            }
-          }
+        for (var k = 0; k < pts.length; k += 3) {
+          final lx = pts[k] * o.sx, lz = pts[k + 2] * o.sz;
+          final h = o.y + pts[k + 1] * o.sy - gy;
+          final hh = h > 0 ? h : 0.0;
+          _hx[n] = o.x + cr * lx + sr * lz + px * hh;
+          _hz[n] = o.z - sr * lx + cr * lz + pz * hh;
+          n++;
         }
-        _hullFan(pts, gy, out);
+        _hullFan(n, gy, out);
       }
     }
-    scene.shadows = Float32List.fromList(out);
+    scene.shadows = out.toList();
     scene.groundVersion++;
   }
 
-  static void _hullFan(Float64List pts, double y, List<double> out) {
-    // Monotone chain convex hull of 8 points.
-    final idx = List<int>.generate(8, (i) => i)
-      ..sort((a, b) {
-        final c = pts[a * 2].compareTo(pts[b * 2]);
-        return c != 0 ? c : pts[a * 2 + 1].compareTo(pts[b * 2 + 1]);
-      });
+  static final _shadowPts = Expando<_ShadowPts>();
+  static Float64List _hx = Float64List(256), _hz = Float64List(256);
+  static Int32List _idx = Int32List(256), _hull = Int32List(512);
+
+  /// Convex hull (monotone chain) of the first [n] points in [_hx]/[_hz],
+  /// emitted as a triangle fan at height [y].
+  static void _hullFan(int n, double y, _ShadowOut out) {
+    if (n < 3) return;
+    final xs = _hx, zs = _hz, idx = _idx, hull = _hull;
+    for (var i = 0; i < n; i++) {
+      idx[i] = i;
+    }
+    // Insertion sort by x then z (n is small).
+    for (var i = 1; i < n; i++) {
+      final v = idx[i];
+      var j = i - 1;
+      while (j >= 0 &&
+          (xs[idx[j]] > xs[v] || (xs[idx[j]] == xs[v] && zs[idx[j]] > zs[v]))) {
+        idx[j + 1] = idx[j];
+        j--;
+      }
+      idx[j + 1] = v;
+    }
     double cross(int o, int a, int b) =>
-        (pts[a * 2] - pts[o * 2]) * (pts[b * 2 + 1] - pts[o * 2 + 1]) -
-        (pts[a * 2 + 1] - pts[o * 2 + 1]) * (pts[b * 2] - pts[o * 2]);
-    final hull = <int>[];
-    for (final i in idx) {
-      while (hull.length >= 2 &&
-          cross(hull[hull.length - 2], hull.last, i) <= 0) {
-        hull.removeLast();
+        (xs[a] - xs[o]) * (zs[b] - zs[o]) - (zs[a] - zs[o]) * (xs[b] - xs[o]);
+    var h = 0;
+    for (var k = 0; k < n; k++) {
+      final i = idx[k];
+      while (h >= 2 && cross(hull[h - 2], hull[h - 1], i) <= 0) {
+        h--;
       }
-      hull.add(i);
+      hull[h++] = i;
     }
-    final lower = hull.length + 1;
-    for (final i in idx.reversed.skip(1)) {
-      while (hull.length >= lower &&
-          cross(hull[hull.length - 2], hull.last, i) <= 0) {
-        hull.removeLast();
+    final lower = h + 1;
+    for (var k = n - 2; k >= 0; k--) {
+      final i = idx[k];
+      while (h >= lower && cross(hull[h - 2], hull[h - 1], i) <= 0) {
+        h--;
       }
-      hull.add(i);
+      hull[h++] = i;
     }
-    hull.removeLast();
-    if (hull.length < 3) return;
+    h--;
+    if (h < 3) return;
     final a = hull[0];
-    for (var k = 1; k < hull.length - 1; k++) {
-      for (final v in [a, hull[k], hull[k + 1]]) {
-        out
-          ..add(pts[v * 2])
-          ..add(y)
-          ..add(pts[v * 2 + 1]);
-      }
+    for (var k = 1; k < h - 1; k++) {
+      out.tri(
+        xs[a],
+        zs[a],
+        xs[hull[k]],
+        zs[hull[k]],
+        xs[hull[k + 1]],
+        zs[hull[k + 1]],
+        y,
+      );
     }
   }
 
@@ -1156,5 +1273,114 @@ class City {
       }
     }
     return null;
+  }
+}
+
+/// Growable triangle buffer for shadow geometry.
+class _ShadowOut {
+  var _d = Float32List(9 * 4096);
+  var _n = 0;
+
+  void tri(
+    double x0,
+    double z0,
+    double x1,
+    double z1,
+    double x2,
+    double z2,
+    double y,
+  ) {
+    if (_n + 9 > _d.length) {
+      _d = Float32List(_d.length * 2)..setRange(0, _n, _d);
+    }
+    final d = _d;
+    d[_n] = x0;
+    d[_n + 1] = y;
+    d[_n + 2] = z0;
+    d[_n + 3] = x1;
+    d[_n + 4] = y;
+    d[_n + 5] = z1;
+    d[_n + 6] = x2;
+    d[_n + 7] = y;
+    d[_n + 8] = z2;
+    _n += 9;
+  }
+
+  Float32List toList() =>
+      Float32List.fromList(Float32List.sublistView(_d, 0, _n));
+}
+
+/// Per-mesh points used to cast its ground shadow, cached once.
+///
+/// Projecting along the light only shifts points of equal height by the same
+/// vector, so the shadow hull of a mesh is the hull of the per-height hulls
+/// of its part-box corners. Keeping just those keeps the per-light-change
+/// work small (#4). Meshes whose parts are depth sorted (monuments) keep
+/// one hull per part so arches and lattices stay open.
+class _ShadowPts {
+  final List<Float32List> all;
+  final List<Float32List> winter;
+
+  _ShadowPts._(this.all, this.winter);
+
+  factory _ShadowPts(Mesh m) {
+    List<Float32List> collect(bool skipFoliage) {
+      final groups = <Float32List>[];
+      // Height level -> bounding rect (x0, z0, x1, z1) of corners there.
+      final levels = <int, Float64List>{};
+      final b = m.partBox;
+      for (var p = 0; p < m.partCount; p++) {
+        final t0 = m.partStart[p], t1 = m.partStart[p + 1];
+        if (t0 >= t1) continue;
+        if (skipFoliage && m.mat[t0] == Mat.foliage) continue;
+        final k = p * 6;
+        if (b[k + 4] < 0.3) continue;
+        if (m.sortParts) {
+          final c = <double>[];
+          for (final y in [b[k + 1], b[k + 4]]) {
+            for (final x in [b[k], b[k + 3]]) {
+              for (final z in [b[k + 2], b[k + 5]]) {
+                c.addAll([x, y, z]);
+              }
+            }
+          }
+          groups.add(Float32List.fromList(c));
+          continue;
+        }
+        for (final y in [b[k + 1], b[k + 4]]) {
+          final r = levels.putIfAbsent(
+            (y * 20).round(),
+            () => Float64List.fromList([1e9, 1e9, -1e9, -1e9]),
+          );
+          if (b[k] < r[0]) r[0] = b[k];
+          if (b[k + 2] < r[1]) r[1] = b[k + 2];
+          if (b[k + 3] > r[2]) r[2] = b[k + 3];
+          if (b[k + 5] > r[3]) r[3] = b[k + 5];
+        }
+      }
+      if (levels.isNotEmpty) {
+        // The shadow is a convex hull anyway, so each level's bounding
+        // rectangle is enough and avoids sorting points per mesh.
+        final pts = Float32List(levels.length * 12);
+        var n = 0;
+        levels.forEach((key, r) {
+          final y = key / 20;
+          for (final (x, z) in [
+            (r[0], r[1]),
+            (r[2], r[1]),
+            (r[2], r[3]),
+            (r[0], r[3]),
+          ]) {
+            pts[n++] = x;
+            pts[n++] = y;
+            pts[n++] = z;
+          }
+        });
+        groups.add(pts);
+      }
+      return groups;
+    }
+
+    return _ShadowPts._(collect(false), collect(true));
   }
 }

@@ -181,6 +181,8 @@ class Light {
     int key,
   ) {
     switch (mat) {
+      case Mat.branch:
+        if (season != Season.winter) return 0;
       case Mat.foliage:
         if (season == Season.winter) return 0;
         final j = 0.82 + ((base >> 16) & 255) / 255 * 0.36;

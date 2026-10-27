@@ -21,6 +21,8 @@ class SceneObject {
   Object? owner;
 
   Int32List? lit;
+  Int32List? lodLit;
+  int lodLitVersion = -1;
   int litVersion = -1;
 
   SceneObject(
@@ -37,10 +39,19 @@ class SceneObject {
 
   /// Recomputes per-triangle lit colours when lighting changes.
   void relight(Light light) {
-    final m = mesh;
+    lit = _shade(mesh, lit, light);
+    litVersion = light.version;
+  }
+
+  /// Lit colours for the LOD mesh, computed when it is first drawn.
+  void relightLod(Light light) {
+    lodLit = _shade(mesh.lod!, lodLit, light);
+    lodLitVersion = light.version;
+  }
+
+  Int32List _shade(Mesh m, Int32List? l, Light light) {
     final n = m.triCount;
-    var l = lit;
-    if (l == null || l.length != n) l = lit = Int32List(n);
+    if (l == null || l.length != n) l = Int32List(n);
     final cr = math.cos(rot), sr = math.sin(rot);
     final cs = math.cos(spin), ss = math.sin(spin);
     final nrm = m.nrm, col = m.col, mat = m.mat;
@@ -50,7 +61,7 @@ class SceneObject {
       final wx = cr * x1 + sr * nz, wz = -sr * x1 + cr * nz;
       l[i] = light.shade(col[i], mat[i], wx, y1, wz, tint, key + (i >> 1));
     }
-    litVersion = light.version;
+    return l;
   }
 }
 
@@ -125,9 +136,9 @@ class Particles {
 class Scene {
   final objects = <SceneObject>[];
 
-  /// Static ground geometry in world space (roads, slabs, grass...).
-  Mesh? ground;
-  SceneObject? groundObject;
+  /// Static ground geometry in world space: the board plus one object per
+  /// block (roads, slabs, grass...).
+  final groundObjects = <SceneObject>[];
 
   /// Optional outlined rectangle on the ground (x0, z0, x1, z1, y).
   List<double>? outline;

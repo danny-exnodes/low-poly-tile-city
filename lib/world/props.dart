@@ -145,17 +145,62 @@ Mesh buildTree(int species, int variant) {
         final s = 0.75 + r.nextDouble() * 0.35;
         final cx = math.cos(a) * d, cz = math.sin(a) * d;
         final cy = h + 0.9 + r.nextDouble() * 0.8 + (k == 0 ? 0.7 : 0);
-        b.box(
-          cx - s,
-          cy - s,
-          cz - s,
-          cx + s,
-          cy + s,
-          cz + s,
-          jitter(),
-          bottom: true,
-        );
+        b.box(cx - s, cy - s, cz - s, cx + s, cy + s, cz + s, jitter());
       }
+  }
+  final full = b.build();
+  full.lod = _treeLod(full, species);
+  full.lodPx = 11;
+  return full;
+}
+
+/// Cheap stand-in for distant trees: a 3-sided trunk and an 8-triangle
+/// crown spanning the full crown's bounds (#4).
+Mesh _treeLod(Mesh full, int species) {
+  var x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+  var mat = Mat.foliage;
+  for (var t = 0; t < full.triCount; t++) {
+    final m = full.mat[t];
+    if (m != Mat.foliage && m != Mat.conifer) continue;
+    mat = m;
+    for (var v = 0; v < 3; v++) {
+      final i = t * 9 + v * 3;
+      x0 = math.min(x0, full.pos[i]);
+      x1 = math.max(x1, full.pos[i]);
+      y0 = math.min(y0, full.pos[i + 1]);
+      y1 = math.max(y1, full.pos[i + 1]);
+      z0 = math.min(z0, full.pos[i + 2]);
+      z1 = math.max(z1, full.pos[i + 2]);
+    }
+  }
+  final b = MeshBuilder();
+  b.cylinder(0, 0, 0, y0 + 0.3, 0.2, 3, Pal.trunk, capTop: false);
+  b.mat = mat;
+  final cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  final rx = (x1 - x0) / 2, rz = (z1 - z0) / 2;
+  if (species == 1) {
+    b.lathe(
+      cx,
+      cz,
+      [y0, y1],
+      [math.max(rx, rz), 0],
+      4,
+      rgb8(150),
+      capTop: false,
+    );
+  } else {
+    final my = species == 2 ? y0 + (y1 - y0) * 0.45 : (y0 + y1) / 2;
+    b.lathe(
+      cx,
+      cz,
+      [y0, my, y1],
+      [0, math.max(rx, rz) * 0.95, 0],
+      4,
+      rgb8(150),
+      colors: [rgb8(110), rgb8(200)],
+      capTop: false,
+      rot: math.pi / 4,
+    );
   }
   return b.build();
 }
@@ -163,7 +208,9 @@ Mesh buildTree(int species, int variant) {
 int rgb8(int j) => 0xFF000000 | (j << 16) | (j << 8) | j;
 
 void _branches(MeshBuilder b, double h, math.Random r) {
-  // Bare branches, visible in winter when foliage disappears.
+  // Bare branches: only drawn in winter, when foliage disappears.
+  final m = b.mat;
+  b.mat = Mat.branch;
   for (var k = 0; k < 3; k++) {
     final a = k * 2.1 + r.nextDouble();
     final y = h * (0.55 + 0.15 * k);
@@ -174,6 +221,7 @@ void _branches(MeshBuilder b, double h, math.Random r) {
       Pal.trunk,
     );
   }
+  b.mat = m;
 }
 
 void _blob(

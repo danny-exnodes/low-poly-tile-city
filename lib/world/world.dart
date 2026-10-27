@@ -53,6 +53,7 @@ class World extends ChangeNotifier {
   double time = 0;
   int _lightVersion = 1;
   bool _lightDirty = true;
+  double _lightAppliedAt = -1;
 
   // Settings.
   double _hour = 17.6;
@@ -78,6 +79,7 @@ class World extends ChangeNotifier {
   int swapEvents = 0;
 
   double fps = 60;
+  double simMs = 0;
 
   World() {
     city = City(5, 5, 1234);
@@ -268,20 +270,7 @@ class World extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<SceneObject> _blockObjects(Block b) {
-    final res = <SceneObject>[];
-    for (final o in scene.objects) {
-      if (o.x >= b.x0 &&
-          o.x <= b.x0 + City.block &&
-          o.z >= b.z0 &&
-          o.z <= b.z0 + City.block) {
-        if (traffic.cars.any((c) => identical(c.obj, o))) continue;
-        if (traffic.people.any((p) => identical(p.obj, o))) continue;
-        res.add(o);
-      }
-    }
-    return res;
-  }
+  List<SceneObject> _blockObjects(Block b) => b.objects;
 
   void _setMoveFrom(Block? b) {
     if (moveFrom != null) {
@@ -305,19 +294,21 @@ class World extends ChangeNotifier {
 
   final _liftBase = <SceneObject, double>{};
 
+  /// Swaps two blocks (Move blocks).
+  void swapBlocks(Block a, Block b) => _swap(a, b);
+
   void _swap(Block a, Block b) {
     _setMoveFrom(null);
-    final ai = a.i, aj = a.j, bi = b.i, bj = b.j;
+    _select(null);
     city.swap(a, b);
-    _rebuild();
+    // Only the two blocks are rebuilt (#4).
+    city.rebuildBlocks([a, b], scene);
     swapEvents++;
     // Drop the two blocks back into place.
     _drops.clear();
-    for (final nb in city.blocks) {
-      if ((nb.i == ai && nb.j == aj) || (nb.i == bi && nb.j == bj)) {
-        for (final o in _blockObjects(nb)) {
-          _drops.add(_Drop(o, o.y));
-        }
+    for (final nb in [city.blockAtCell(a.i, a.j), city.blockAtCell(b.i, b.j)]) {
+      for (final o in nb.objects) {
+        _drops.add(_Drop(o, o.y));
       }
     }
     _dropT = 0;
@@ -329,7 +320,6 @@ class World extends ChangeNotifier {
     } else {
       l.block.content.monuments[l.index] = m;
     }
-    city.spinners.removeWhere((s) => l.objects.contains(s.obj));
     for (final o in l.objects) {
       o.highlight = 0;
     }
@@ -355,8 +345,11 @@ class World extends ChangeNotifier {
     dt = dt.clamp(0.0, 0.1);
     time += dt;
 
-    if (_lightDirty) {
+    // While a slider is dragged, relight at most ~10 times a second; the
+    // last value always lands (#4).
+    if (_lightDirty && time - _lightAppliedAt >= 0.1) {
       _lightDirty = false;
+      _lightAppliedAt = time;
       scene.light = Light(_hour, _season)..version = ++_lightVersion;
       city.updateShadows(scene);
     }

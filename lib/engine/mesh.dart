@@ -37,6 +37,7 @@ abstract final class Mat {
   static const headlight = 9;
   static const crop = 10; // fields, follow seasons
   static const neon = 11; // signs / fair lights, glow at dusk
+  static const branch = 12; // bare branches, only drawn in winter
 }
 
 /// Triangle soup with per-triangle normal, colour and material, grouped in
@@ -68,6 +69,58 @@ class Mesh {
     this.maxZ,
   );
 
+  /// Simpler stand-in drawn when the object is smaller than [lodPx]
+  /// pixels (projected radius) on screen (#4).
+  Mesh? _lod;
+  Mesh Function()? _makeLod;
+  double lodPx = 0;
+
+  /// The LOD mesh, built on first use (most houses are never far away).
+  Mesh? get lod => _lod ??= _makeLod?.call();
+  set lod(Mesh? m) => _lod = m;
+  bool get hasLod => _lod != null || _makeLod != null;
+
+  /// Copy of this mesh without the triangles flagged in [skip].
+  Mesh _without(Uint8List skip) {
+    var keep = 0;
+    for (final f in skip) {
+      if (f == 0) keep++;
+    }
+    final p = Float32List(keep * 9), n = Float32List(keep * 3);
+    final c = Int32List(keep), mt = Uint8List(keep);
+    final ps = Int32List(partStart.length);
+    var o = 0, pi = 0;
+    for (var t = 0; t < triCount; t++) {
+      while (pi < ps.length && partStart[pi] == t) {
+        ps[pi++] = o;
+      }
+      if (skip[t] != 0) continue;
+      p.setRange(o * 9, o * 9 + 9, pos, t * 9);
+      n.setRange(o * 3, o * 3 + 3, nrm, t * 3);
+      c[o] = col[t];
+      mt[o] = mat[t];
+      o++;
+    }
+    while (pi < ps.length) {
+      ps[pi++] = o;
+    }
+    return Mesh(
+      p,
+      n,
+      c,
+      mt,
+      ps,
+      partBox,
+      sortParts,
+      minX,
+      minY,
+      minZ,
+      maxX,
+      maxY,
+      maxZ,
+    );
+  }
+
   int get triCount => col.length;
   int get partCount => partStart.length - 1;
   double get centerX => (minX + maxX) / 2;
@@ -84,6 +137,10 @@ class MeshBuilder {
   final _n = <double>[];
   final _c = <int>[];
   final _m = <int>[];
+  final _skip = <bool>[];
+
+  /// Triangles added while true are left out of the LOD mesh.
+  bool lodSkip = false;
   final _partStart = <int>[];
   final _partBox = <double>[];
   bool sortParts;
@@ -165,6 +222,7 @@ class MeshBuilder {
       ..add(n.z);
     _c.add(color);
     _m.add(mat);
+    _skip.add(lodSkip);
     _grow(a.x, a.y, a.z);
     _grow(b.x, b.y, b.z);
     _grow(c.x, c.y, c.z);
@@ -632,6 +690,9 @@ class MeshBuilder {
     double off = 0.04,
   }) {
     final out = V3(nx.toDouble(), 0, nz.toDouble());
+    // Small decals vanish at a distance; lit windows stay for the night.
+    final keep = lodSkip;
+    lodSkip = mat != Mat.window;
     if (nx != 0) {
       final x = plane + nx * off;
       quad(
@@ -653,13 +714,30 @@ class MeshBuilder {
         out: out,
       );
     }
+    lodSkip = keep;
   }
 
-  Mesh build() {
-    _partStart.add(_c.length);
+  /// Builds the mesh; with [lodPx] > 0 also attaches an LOD mesh without
+  /// the triangles flagged [lodSkip].
+  Mesh build({double lodPx = 0}) {
+    final m = _build();
+    if (lodPx > 0 && _skip.contains(true)) {
+      final mask = Uint8List(_skip.length);
+      for (var t = 0; t < mask.length; t++) {
+        if (_skip[t]) mask[t] = 1;
+      }
+      m._makeLod = () => m._without(mask);
+      m.lodPx = lodPx;
+    }
+    return m;
+  }
+
+  Mesh _build() {
+    final p = _p, n = _n, c = _c, mt = _m;
+    final ps = [..._partStart, _c.length];
     var mnx = 1e9, mny = 1e9, mnz = 1e9, mxx = -1e9, mxy = -1e9, mxz = -1e9;
-    for (var i = 0; i < _p.length; i += 3) {
-      final x = _p[i], y = _p[i + 1], z = _p[i + 2];
+    for (var i = 0; i < p.length; i += 3) {
+      final x = p[i], y = p[i + 1], z = p[i + 2];
       if (x < mnx) mnx = x;
       if (y < mny) mny = y;
       if (z < mnz) mnz = z;
@@ -667,13 +745,13 @@ class MeshBuilder {
       if (y > mxy) mxy = y;
       if (z > mxz) mxz = z;
     }
-    if (_p.isEmpty) mnx = mny = mnz = mxx = mxy = mxz = 0;
+    if (p.isEmpty) mnx = mny = mnz = mxx = mxy = mxz = 0;
     return Mesh(
-      Float32List.fromList(_p),
-      Float32List.fromList(_n),
-      Int32List.fromList(_c),
-      Uint8List.fromList(_m),
-      Int32List.fromList(_partStart),
+      Float32List.fromList(p),
+      Float32List.fromList(n),
+      Int32List.fromList(c),
+      Uint8List.fromList(mt),
+      Int32List.fromList(ps),
       Float32List.fromList(_partBox),
       sortParts,
       mnx,

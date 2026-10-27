@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:web/web.dart' as web;
 
 import 'audio/audio_engine.dart';
+import 'debug_hook.dart';
 import 'ui/controls.dart';
 import 'ui/house_panel.dart';
 import 'ui/settings_panel.dart';
@@ -59,13 +60,13 @@ class _CityScreenState extends State<CityScreen>
   late final Ticker _ticker;
   Duration _last = Duration.zero;
   double _statT = 0;
-  double _simMs = 0;
   int _frames = 0;
 
   @override
   void initState() {
     super.initState();
     _ticker = createTicker(_tick)..start();
+    if (debugHookEnabled) installDebugHook(world);
   }
 
   void _tick(Duration now) {
@@ -75,7 +76,7 @@ class _CityScreenState extends State<CityScreen>
     _last = now;
     final sw = Stopwatch()..start();
     world.update(dt);
-    _simMs = _simMs * 0.9 + sw.elapsedMicroseconds / 1000 * 0.1;
+    world.simMs = world.simMs * 0.9 + sw.elapsedMicroseconds / 1000 * 0.1;
     audio.tick(world);
     frame.value++;
     _frames++;
@@ -90,7 +91,7 @@ class _CityScreenState extends State<CityScreen>
           '${c.nx * c.nz} blocks · ${c.houseCount} houses · '
           '${world.fps.round()} fps\n${r.drawCalls} draw calls · '
           '${_k(r.triangles)} triangles\n'
-          'cpu ${r.cpuMs.toStringAsFixed(1)} ms render · ${_simMs.toStringAsFixed(1)} ms sim';
+          'cpu ${r.cpuMs.toStringAsFixed(1)} ms render · ${world.simMs.toStringAsFixed(1)} ms sim';
     }
     if (_frames % 6 == 0) gauge.value++;
   }

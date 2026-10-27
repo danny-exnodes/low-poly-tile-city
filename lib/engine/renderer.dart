@@ -122,8 +122,8 @@ class Renderer {
   }
 
   /// Emits the triangles of [o] (already relit) into the batch.
-  void _emit(SceneObject o, int drawId, Light light) {
-    final m = o.mesh;
+  void _emit(SceneObject o, int drawId, Light light, {bool lod = false}) {
+    final m = lod ? o.mesh.lod! : o.mesh;
     final cam = this.cam;
     final cr = math.cos(o.rot), sr = math.sin(o.rot);
     final cs = math.cos(o.spin), ss = math.sin(o.spin);
@@ -150,7 +150,7 @@ class Renderer {
     final b2 = cam.fx * ox + cam.fy * oy + cam.fz * oz;
     final focal = cam.focal, ccx = cam.cx, ccy = cam.cy;
 
-    final lit = o.lit!;
+    final lit = lod ? o.lodLit! : o.lit!;
     final p = m.pos;
     final nrm = m.nrm;
     final hl = o.highlight;
@@ -291,7 +291,8 @@ class Renderer {
     }
   }
 
-  bool _visible(SceneObject o) {
+  /// Projected radius in pixels, or -1 when off screen.
+  double _screenRadius(SceneObject o) {
     final m = o.mesh;
     final s = math.max(o.sx, math.max(o.sy, o.sz));
     final r = m.radius * s + 1;
@@ -300,28 +301,29 @@ class Renderer {
         wz = o.z + m.centerZ;
     final dx = wx - cam.ex, dy = wy - cam.ey, dz = wz - cam.ez;
     final z = dx * cam.fx + dy * cam.fy + dz * cam.fz;
-    if (z < -r) return false;
-    if (z < r) return true;
+    if (z < -r) return -1;
+    if (z < r) return 1e9;
     final x = (dx * cam.rx + dy * cam.ry + dz * cam.rz) * cam.focal / z;
     final y = (dx * cam.ux + dy * cam.uy + dz * cam.uz) * cam.focal / z;
     final sr = r * cam.focal / z;
-    return x + sr > -cam.cx &&
+    final on =
+        x + sr > -cam.cx &&
         x - sr < cam.cx &&
         y + sr > -cam.cy &&
         y - sr < cam.cy;
+    return on ? sr : -1;
   }
 
   ui.Picture _buildGround(Scene scene) {
     final rec = ui.PictureRecorder();
     final c = ui.Canvas(rec);
     final light = scene.light;
-    final g = scene.groundObject;
     _n = 0;
-    if (g != null) {
+    for (final g in scene.groundObjects) {
       if (g.litVersion != light.version) g.relight(light);
       _emit(g, -1, light);
-      _flush(c);
     }
+    _flush(c);
     _n = 0;
     final sh = scene.shadows;
     if (sh.isNotEmpty && light.shadowAlpha > 0.01) {
@@ -366,8 +368,13 @@ class Renderer {
   }
 
   Int32List _ranges = Int32List(256);
+  ui.Image? _prevBlur;
   Float64List _keys = Float64List(1024);
   final _drawList = <SceneObject>[];
+  final _drawLod = <bool>[];
+
+  /// Multiplies every mesh's LOD threshold (1 = default, 0 = never).
+  double lodScale = 1;
 
   /// Renders the whole scene onto [canvas].
   void render(
@@ -414,13 +421,16 @@ class Renderer {
     final objs = scene.objects;
     final parts = scene.particles;
     _drawList.clear();
+    _drawLod.clear();
     var nk = 0;
     final need = objs.length + parts.count;
     if (_keys.length < need) _keys = Float64List(need * 2);
     for (final o in objs) {
       if (!o.visible) continue;
-      if (!_visible(o)) continue;
+      final sr = _screenRadius(o);
+      if (sr < 0) continue;
       final m = o.mesh;
+      _drawLod.add(sr < m.lodPx * lodScale && m.hasLod);
       final d = cam.depth(
         o.x + m.centerX,
         o.y + m.centerY * o.sy,
@@ -445,7 +455,11 @@ class Renderer {
       if (id < pBase) {
         final o = _drawList[id];
         if (o.litVersion != light.version || o.dynamicLight) o.relight(light);
-        _emit(o, id, light);
+        final lod = _drawLod[id];
+        if (lod && (o.lodLitVersion != light.version || o.dynamicLight)) {
+          o.relightLod(light);
+        }
+        _emit(o, id, light, lod: lod);
       } else {
         _emitParticle(parts, id - pBase, pbright);
       }
@@ -470,35 +484,79 @@ class Renderer {
     canvas.drawPicture(pic);
 
     if (tiltShift) {
-      // Blur a copy and keep only the top and bottom bands.
-      canvas.saveLayer(
-        rect,
+      // Blur a 35% copy of the frame (cheap) and stretch it over the top and
+      // bottom bands; blurring the full-size frame tripled GPU time (#4).
+      const k = 0.35;
+      final sw = math.max(1, (size.width * k).ceil());
+      final sh = math.max(1, (size.height * k).ceil());
+      final rec2 = ui.PictureRecorder();
+      final c2 = ui.Canvas(rec2);
+      c2.saveLayer(
+        null,
         ui.Paint()
           ..imageFilter = ui.ImageFilter.blur(
-            sigmaX: 3.2,
-            sigmaY: 3.2,
+            sigmaX: 1.4,
+            sigmaY: 1.4,
             tileMode: ui.TileMode.clamp,
           ),
       );
-      canvas.drawPicture(pic);
-      canvas.drawRect(
-        rect,
+      c2.scale(k);
+      c2.drawPicture(pic);
+      c2.restore();
+      final small = rec2.endRecording().toImageSync(sw, sh);
+      _prevBlur?.dispose();
+      _prevBlur = small;
+      // Two bands textured with the blurred copy, fading out towards the
+      // middle through vertex alpha: no full-screen layer or mask needed.
+      final w = size.width, h = size.height;
+      final tx = sw / w, ty = sh / h;
+      const top = 0.38, bottom = 0.62;
+      final pos = Float32List.fromList([
+        0, 0, w, 0, w, h * top, 0, 0, w, h * top, 0, h * top, //
+        0, h * bottom, w, h * bottom, w, h, 0, h * bottom, w, h, 0, h,
+      ]);
+      final tex = Float32List(pos.length);
+      for (var k2 = 0; k2 < pos.length; k2 += 2) {
+        tex[k2] = pos[k2] * tx;
+        tex[k2 + 1] = pos[k2 + 1] * ty;
+      }
+      const o = 0xFFFFFFFF, t = 0x00FFFFFF;
+      final cols = Int32List.fromList([o, o, t, o, t, t, t, t, o, t, o, o]);
+      canvas.drawVertices(
+        ui.Vertices.raw(
+          ui.VertexMode.triangles,
+          pos,
+          textureCoordinates: tex,
+          colors: cols,
+        ),
+        ui.BlendMode.modulate,
         ui.Paint()
-          ..blendMode = ui.BlendMode.dstIn
-          ..shader = ui.Gradient.linear(
-            ui.Offset.zero,
-            ui.Offset(0, size.height),
-            const [
-              ui.Color(0xFF000000),
-              ui.Color(0x00000000),
-              ui.Color(0x00000000),
-              ui.Color(0xFF000000),
-            ],
-            const [0.0, 0.38, 0.62, 1.0],
+          ..shader = ui.ImageShader(
+            small,
+            ui.TileMode.clamp,
+            ui.TileMode.clamp,
+            Float64List.fromList([
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+            ]),
+            filterQuality: ui.FilterQuality.medium,
           ),
       );
-      canvas.restore();
-      stats.drawCalls += 3;
+      stats.drawCalls += 1;
     }
 
     // Vignette.
