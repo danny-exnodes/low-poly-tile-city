@@ -55,3 +55,6 @@ Không lưu thông tin khách vào repo. Theo dõi trong Gmail: thread "[Gấp] 
 ## Quy tắc thị trường (chủ dự án 29/10)
 - Tập trung thị trường Úc. Email giới thiệu chuẩn: case SiteSmart (Úc) + POS/booking, link portfolio công khai https://exnodes.vn/staticfile/Exnodes-Project-Portfolio.pdf, nêu lệch giờ AEST 3–4 tiếng, dedicated dev theo tháng hoặc giá cố định, NDA, IP thuộc khách.
 - Khách thuộc lĩnh vực childcare / early learning / OSHC: gom riêng, KHÔNG gửi email, chờ chủ dự án quyết.
+
+## Quy tắc cc (chủ dự án 29/10)
+- Mọi email gửi đi (chào hàng, follow-up, trả lời khách, giao việc nội bộ) đều cc: phoebe@exnodes.vn, dragoon@exnodes.vn, kai@exnodes.vn.
