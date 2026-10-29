@@ -40,3 +40,40 @@ Chơi thử: https://danny-exnodes.github.io/low-poly-tile-city/
 ## 6. X / Threads (ngắn)
 A whole toy town in your browser 🌳🚗🍂 wind, seasons, day→night, build & share your own. No 3D engine, just Flutter + a hand-written renderer.
 https://danny-exnodes.github.io/low-poly-tile-city/ #gamedev #lowpoly #procgen #flutterdev
+
+---
+
+## 7. Zalo/Messenger — nhắn người quen (kênh chốt nhanh nhất)
+Gửi cho: bạn làm ở agency, BĐS, edtech, studio game, khách cũ của Exnodes. Mỗi người nhắn riêng, không gửi hàng loạt.
+
+> Chào [tên], lâu rồi không gặp! Đội mình vừa làm xong một sản phẩm 3D chạy trên web, muốn nhờ bạn xem 30 giây: https://danny-exnodes.github.io/low-poly-tile-city/
+> Nó là một thị trấn đồ chơi sống động (xe, người, gió, 4 mùa, ngày đêm), có thể đổi thành sa bàn dự án BĐS, minigame cho chiến dịch hoặc bài học cho trẻ.
+> Bên bạn hoặc khách bên bạn có ai đang cần thứ như vậy không? Tuần này mình giảm 30% cho đối tác đầu tiên, và gửi 10% hoa hồng nếu bạn giới thiệu thành công.
+
+(Hoa hồng giới thiệu 10% là đề xuất, anh/chị bỏ đi nếu không muốn.)
+
+## 8. LinkedIn — bài đăng cá nhân
+Đính kèm `demo.mp4`.
+
+> Our team just shipped Toy City: a living low-poly town that runs in any browser and on phones. Cars keep their lanes, people walk the parks, trees move in the wind, four seasons, day to night. Visitors build their own street and share it as a link.
+>
+> No 3D engine, no paid assets: Flutter web and a hand-written renderer, ~10k lines of Dart.
+>
+> We're looking for our first partners to turn it into:
+> → an interactive master plan for a real-estate project
+> → a "build your dream town" brand campaign
+> → a STEM / English lesson kids actually want to play
+>
+> Try it: https://danny-exnodes.github.io/low-poly-tile-city/
+> 30% off for partners who confirm before 3 Nov. DM me.
+>
+> #3D #webgl #flutter #proptech #realestatemarketing #edtech #gamedev
+
+## 9. LinkedIn — tin nhắn trực tiếp (giới hạn 300 ký tự khi kết bạn)
+Tìm người theo: "Marketing Manager" / "Digital Marketing" / "Brand Manager" tại Gamuda Land, Masterise Homes, Ecopark, CapitaLand Vietnam, Nam Long, Vinhomes, Novaland, Khang Điền; "Creative Director" / "Account Director" tại Ki Saigon, Dentsu Redder, Ogilvy Vietnam, Mona Media; "Partnership" tại Monkey, MindX, Teky, Clevai.
+
+Lời mời kết bạn:
+> Chào anh/chị [tên], em là Danny (Exnodes). Bên em làm sa bàn 3D tương tác chạy trên web cho dự án BĐS/chiến dịch thương hiệu. Demo 30 giây: danny-exnodes.github.io/low-poly-tile-city — rất mong được kết nối.
+
+Sau khi được chấp nhận:
+> Cảm ơn anh/chị đã kết nối! Em nghĩ bản demo này có thể thành "sa bàn sống" cho [tên dự án]: toà nhà và tiện ích theo màu thương hiệu, xem lúc hoàng hôn và ban đêm, nhúng vào landing page. Bên em làm trong 2–3 tuần, từ 39 triệu, giảm 30% nếu chốt trước 03/11. Anh/chị có 15 phút trong tuần này để em dựng thử một bản theo dự án bên mình không?

@@ -4,20 +4,20 @@ Trang bán hàng (private, chủ dự án cần Share): https://claude.ai/artifa
 Demo công khai: https://danny-exnodes.github.io/low-poly-tile-city/
 Bài đăng cộng đồng soạn sẵn: `posts.md`. Ảnh/video: `hero.jpg zoom.jpg angle.jpg phone.jpg demo.mp4 demo.gif`.
 
-## Giá đang chào (chờ chủ dự án duyệt)
+## Giá đang chào (chủ dự án đã duyệt 29/10)
 Licence mã nguồn $149 (~3,9tr) · White-label từ $1.500 (~39tr, 2–3 tuần, cọc 50%) · Mua đứt $6.000 (~156tr; nghiên cứu gợi ý $8–15k) · Giảm 30% nếu chốt trước 03/11.
 Gợi ý thêm từ nghiên cứu: Commercial licence cho agency $299–499.
 
 ## Prospect
 | # | Tổ chức | Kênh | Trạng thái 29/10 |
 |---|---|---|---|
-| 1 | VR360 (Đà Nẵng, virtual tour/Map3D) | infor@vr360.com.vn | Nháp Gmail, chờ duyệt gửi |
-| 2 | Panoee (tour 360) | neo@panoee.com | Nháp, chờ duyệt |
-| 3 | Mona Media (agency) | info@themona.global | Nháp, chờ duyệt |
-| 4 | Gamuda Land VN | glvn.info@gamudaland.com.my | Nháp (EN), chờ duyệt |
-| 5 | Bluemarq (Đất Xanh) | info@bluemarq.com | Nháp, chờ duyệt |
-| 6 | Monkey (edtech) | daily@monkey.edu.vn | Nháp, chờ duyệt |
-| 7 | STEAM for Vietnam | hello@steamforvietnam.org | Nháp, chờ duyệt |
+| 1 | VR360 (Đà Nẵng, virtual tour/Map3D) | infor@vr360.com.vn | Đã gửi email 29/10 13:5x |
+| 2 | Panoee (tour 360) | neo@panoee.com | Đã gửi email 29/10 |
+| 3 | Mona Media (agency) | info@themona.global | Đã gửi email 29/10 |
+| 4 | Gamuda Land VN | glvn.info@gamudaland.com.my | Đã gửi email (EN) 29/10 |
+| 5 | Bluemarq (Đất Xanh) | info@bluemarq.com | Đã gửi email 29/10 |
+| 6 | Monkey (edtech) | daily@monkey.edu.vn | Đã gửi email 29/10 |
+| 7 | STEAM for Vietnam | hello@steamforvietnam.org | Đã gửi email 29/10 |
 | 8 | Ecopark | form ecopark.com.vn/contact.html | Cần điền form (người thật) |
 | 9 | Masterise Homes | form masterisehomes.com/lien-he, 028 39 159 159 | Cần form/gọi |
 | 10 | CapitaLand VN | form capitaland.com/vn/vi/contact-us.html | Cần form |
@@ -33,3 +33,8 @@ Gợi ý thêm từ nghiên cứu: Commercial licence cho agency $299–499.
 ## Kênh tự phục vụ (cần tài khoản của chủ dự án, miễn phí)
 itch.io (bán "Source licence", không cần duyệt) · Gumroad/Lemon Squeezy (trang thanh toán) · SideProjectors (đăng bán dự án, miễn phí) · Reddit r/proceduralgeneration, r/FlutterDev, r/cozygames, r/SideProject · Show HN · nhóm Facebook VN (Flutter Vietnam, Game Dev VN, Marketing BĐS).
 Không ưu tiên: Acquire ($25/tháng), Flippa (phí đăng), CodeCanyon (duyệt lâu), Fiverr/Upwork (gig mới khó lên).
+
+## Quyền đã được cấp (29/10)
+- Được tự gửi email chào hàng cá nhân hoá từ Gmail của chủ dự án, tối đa ~15 email/ngày.
+- Giá giữ nguyên như trên.
+- Kênh chủ dự án tự đăng: Facebook/Zalo cá nhân, LinkedIn (nội dung ở posts.md mục 5, 7, 8, 9).
