@@ -44,3 +44,6 @@ Không ưu tiên: Acquire ($25/tháng), Flippa (phí đăng), CodeCanyon (duyệ
 - Không tự gõ khối chữ ký: thân thư kết thúc ở "Trân trọng," / "Best regards," rồi để chữ ký Gmail.
 - Giới thiệu: "Mình là Danny, Chairman của Exnodes" / "I'm Danny, Chairman of Exnodes".
 - 7 email đầu (29/10) gửi thiếu chữ ký chuẩn; email follow-up (31/10) sẽ có đủ chữ ký.
+
+## Lead Exnodes / ENNAM (từ 29/10)
+Không lưu thông tin khách vào repo. Theo dõi trong Gmail: thread "[Gấp] Xin rate card hiện tại của Exnodes và Én Nam" (Phoebe cập nhật hằng ngày) và các follow-up ngày 29/10 có cc phoebe@exnodes.vn.
