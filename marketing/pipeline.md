@@ -51,3 +51,7 @@ Không lưu thông tin khách vào repo. Theo dõi trong Gmail: thread "[Gấp] 
 ## Quy tắc liên hệ (chủ dự án yêu cầu 29/10)
 - PHẢI hỏi chủ dự án và được đồng ý TRƯỚC khi gửi email cho bất kỳ ai đã có trong Gmail (khách cũ, khách đang làm, lead cũ, đối tác, người giới thiệu). Nhiều dự án đã drop mà mail không thể hiện.
 - Chỉ được tự gửi (tối đa ~15/ngày) cho khách hoàn toàn mới, chưa từng có trong Gmail; kiểm tra bằng search_threads theo email và tên miền trước khi gửi.
+
+## Quy tắc thị trường (chủ dự án 29/10)
+- Tập trung thị trường Úc. Email giới thiệu chuẩn: case SiteSmart (Úc) + POS/booking, link portfolio công khai https://exnodes.vn/staticfile/Exnodes-Project-Portfolio.pdf, nêu lệch giờ AEST 3–4 tiếng, dedicated dev theo tháng hoặc giá cố định, NDA, IP thuộc khách.
+- Khách thuộc lĩnh vực childcare / early learning / OSHC: gom riêng, KHÔNG gửi email, chờ chủ dự án quyết.
