@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Internal sales material (pricing, bids) - keep out of the public repo
+marketing/bids-*.md
