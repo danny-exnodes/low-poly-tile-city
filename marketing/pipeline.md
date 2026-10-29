@@ -38,3 +38,9 @@ Không ưu tiên: Acquire ($25/tháng), Flippa (phí đăng), CodeCanyon (duyệ
 - Được tự gửi email chào hàng cá nhân hoá từ Gmail của chủ dự án, tối đa ~15 email/ngày.
 - Giá giữ nguyên như trên.
 - Kênh chủ dự án tự đăng: Facebook/Zalo cá nhân, LinkedIn (nội dung ở posts.md mục 5, 7, 8, 9).
+
+## Quy tắc soạn email (chủ dự án yêu cầu 29/10)
+- Luôn gửi bằng `htmlBody` với `includeSignature: true` để Gmail chèn chữ ký chuẩn (Danny Tran · Chairman · số điện thoại · logo Exnodes · địa chỉ).
+- Không tự gõ khối chữ ký: thân thư kết thúc ở "Trân trọng," / "Best regards," rồi để chữ ký Gmail.
+- Giới thiệu: "Mình là Danny, Chairman của Exnodes" / "I'm Danny, Chairman of Exnodes".
+- 7 email đầu (29/10) gửi thiếu chữ ký chuẩn; email follow-up (31/10) sẽ có đủ chữ ký.
