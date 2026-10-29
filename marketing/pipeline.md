@@ -47,3 +47,7 @@ Không ưu tiên: Acquire ($25/tháng), Flippa (phí đăng), CodeCanyon (duyệ
 
 ## Lead Exnodes / ENNAM (từ 29/10)
 Không lưu thông tin khách vào repo. Theo dõi trong Gmail: thread "[Gấp] Xin rate card hiện tại của Exnodes và Én Nam" (Phoebe cập nhật hằng ngày) và các follow-up ngày 29/10 có cc phoebe@exnodes.vn.
+
+## Quy tắc liên hệ (chủ dự án yêu cầu 29/10)
+- PHẢI hỏi chủ dự án và được đồng ý TRƯỚC khi gửi email cho bất kỳ ai đã có trong Gmail (khách cũ, khách đang làm, lead cũ, đối tác, người giới thiệu). Nhiều dự án đã drop mà mail không thể hiện.
+- Chỉ được tự gửi (tối đa ~15/ngày) cho khách hoàn toàn mới, chưa từng có trong Gmail; kiểm tra bằng search_threads theo email và tên miền trước khi gửi.
